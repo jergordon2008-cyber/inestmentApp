@@ -1,0 +1,94 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Full profile — private to the owner, readable by admin for the admin view.
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isOwner(uid);
+    }
+
+    // Full portfolio incl. trade history — same privacy model.
+    match /portfolios/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isOwner(uid);
+    }
+
+    // Trade journal / reflections — same privacy model.
+    match /journals/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if isOwner(uid);
+    }
+
+    // Small denormalized doc powering the leaderboard. Any signed-in student
+    // can read everyone's public stats (that's the point of a leaderboard),
+    // but can only write their own.
+    match /public_stats/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(uid);
+    }
+
+    // Classrooms: any signed-in user can read/create/update for MVP
+    // simplicity (club-scale, trusted users). Tighten to teacher-only
+    // writes once roles are enforced server-side.
+    match /classrooms/{classId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Admin allow-list — presence of a doc here grants admin rights.
+    // Never writable from the client; only set via Firebase console/CLI.
+    match /admins/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    // Real trade activity feed (symbol/action/name only, no amounts).
+    // Any signed-in student can read the feed; a student can only create
+    // events attributed to themselves, and events are immutable.
+    match /activity/{eventId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Weekly challenge join records — one doc per (challenge, student) pair.
+    // Real participant counts come from counting these, not a fake number.
+    match /challenge_joins/{joinId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Forum posts — any signed-in student can read; a student can only
+    // create posts attributed to themselves, and posts are immutable once
+    // created (no editing/deleting from the client for MVP simplicity).
+    match /forum_posts/{postId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.authorUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Analytics events — write-only from the client (a student can only
+    // create events attributed to themselves, never read anyone's,
+    // including their own — this is telemetry, not a feature). Only admins
+    // can read, for the internal analytics dashboard. Immutable once written.
+    match /analytics_events/{eventId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+  }
+}

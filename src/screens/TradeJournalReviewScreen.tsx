@@ -414,6 +414,14 @@ function ReflectedEntryCard({
                                theme.colors.dangerGlow,
             },
           ]}>
+            <Ionicons
+              name={r.thesisPlayedOut === 'yes' ? 'checkmark' :
+                    r.thesisPlayedOut === 'partially' ? 'remove' : 'close'}
+              size={11}
+              color={r.thesisPlayedOut === 'yes' ? theme.colors.success :
+                     r.thesisPlayedOut === 'partially' ? theme.colors.warning :
+                     theme.colors.danger}
+            />
             <Text style={[
               styles.outcomeBadgeText,
               {
@@ -422,9 +430,9 @@ function ReflectedEntryCard({
                        theme.colors.danger,
               },
             ]}>
-              {r.thesisPlayedOut === 'yes' ? '✓ Played out' :
-               r.thesisPlayedOut === 'partially' ? '~ Partial' :
-               '✗ Did not'}
+              {r.thesisPlayedOut === 'yes' ? 'Played out' :
+               r.thesisPlayedOut === 'partially' ? 'Partial' :
+               'Did not'}
             </Text>
           </View>
         </View>
@@ -509,7 +517,7 @@ const styles = StyleSheet.create({
   thesisLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 0.6, marginBottom: 4 },
   thesisText: { fontSize: 13, lineHeight: 19 },
 
-  outcomeBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
+  outcomeBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
   outcomeBadgeText: { fontSize: 11, fontWeight: '700' },
 
   reflectionForm: { marginTop: 16 },

@@ -50,7 +50,10 @@ export function SubscriptionScreen({ onBack, lockedFeature, onSubscribed }: Prop
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.colors.background }]}>
       <View style={s.header}>
-        <TouchableOpacity onPress={onBack}><Text style={[s.back, { color: theme.colors.primary }]}>← Back</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onBack} style={s.backRow}>
+          <Ionicons name="chevron-back" size={18} color={theme.colors.primary} />
+          <Text style={[s.back, { color: theme.colors.primary }]}>Back</Text>
+        </TouchableOpacity>
         <View style={{ width: 60 }} />
       </View>
 
@@ -129,6 +132,7 @@ const s = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
   back: { fontSize: 16, fontWeight: '600' },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
 
   scroll: { paddingHorizontal: 20 },
   heroCard: { alignItems: 'center', borderRadius: 24, padding: 28, marginBottom: 24 },

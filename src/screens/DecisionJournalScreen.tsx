@@ -22,7 +22,10 @@ export function DecisionJournalScreen({ onBack }: Props) {
   return (
     <SafeAreaView style={s.container}>
       <View style={s.header}>
-        <TouchableOpacity onPress={onBack}><Text style={s.back}>← Back</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onBack} style={s.backRow}>
+          <Ionicons name="chevron-back" size={18} color={theme.colors.primary} />
+          <Text style={s.back}>Back</Text>
+        </TouchableOpacity>
         <Text style={s.headerTitle}>Decision Journal</Text>
         <View style={{ width: 60 }} />
       </View>
@@ -187,6 +190,7 @@ const styles = (theme: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
   back: { color: theme.colors.primary, fontSize: 16, fontWeight: '600' },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   headerTitle: { color: theme.colors.textPrimary, fontSize: 16, fontWeight: '700' },
 
   tabRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: theme.colors.border },

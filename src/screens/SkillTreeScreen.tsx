@@ -186,9 +186,16 @@ export function SkillTreeScreen({ onBack, onLessonPress }: Props) {
             <Ionicons name="chevron-back" size={24} color="#6C47FF" />
           </TouchableOpacity>
           <View style={s.headerMid}>
-            <Text style={s.headerTitle}>
-              {gamificationEnabled ? '⬡ SKILL TREE' : '◈ LEARNING PATHS'}
-            </Text>
+            <View style={s.headerTitleRow}>
+              <Ionicons
+                name={gamificationEnabled ? 'git-network-outline' : 'map-outline'}
+                size={13}
+                color={s.headerTitle.color}
+              />
+              <Text style={s.headerTitle}>
+                {gamificationEnabled ? 'SKILL TREE' : 'LEARNING PATHS'}
+              </Text>
+            </View>
             <Text style={s.headerSub}>
               {completedNodes.length} of {SKILL_NODES.length} mastered
             </Text>
@@ -611,6 +618,7 @@ const s = StyleSheet.create({
   backBtn:   { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headerMid: { flex: 1, alignItems: 'center' },
   headerTitle: { fontSize: 13, fontWeight: '800', color: '#FFFFFF', letterSpacing: 2 },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   headerSub:   { fontSize: 10, color: '#333360', fontWeight: '500', marginTop: 2 },
   levelBadge:  {
     width: 42, height: 42, borderRadius: 12,

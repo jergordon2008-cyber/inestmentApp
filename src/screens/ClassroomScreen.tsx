@@ -50,7 +50,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
     if (!setupPhase) return (
       <SafeAreaView style={s.container}>
         <View style={s.header}>
-          <TouchableOpacity onPress={onBack}><Text style={s.back}>← Back</Text></TouchableOpacity>
+          <TouchableOpacity onPress={onBack} style={s.backRow}><Ionicons name="chevron-back" size={18} color={theme.colors.primary} /><Text style={s.back}>Back</Text></TouchableOpacity>
           <Text style={s.headerTitle}>Classroom</Text>
           <View style={{ width: 60 }} />
         </View>
@@ -73,7 +73,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
     if (setupPhase === 'join') return (
       <SafeAreaView style={s.container}>
         <View style={s.header}>
-          <TouchableOpacity onPress={() => setSetupPhase(null)}><Text style={s.back}>← Back</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setSetupPhase(null)} style={s.backRow}><Ionicons name="chevron-back" size={18} color={theme.colors.primary} /><Text style={s.back}>Back</Text></TouchableOpacity>
           <Text style={s.headerTitle}>Join Classroom</Text>
           <View style={{ width: 60 }} />
         </View>
@@ -103,7 +103,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
     if (setupPhase === 'create') return (
       <SafeAreaView style={s.container}>
         <View style={s.header}>
-          <TouchableOpacity onPress={() => setSetupPhase(null)}><Text style={s.back}>← Back</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => setSetupPhase(null)} style={s.backRow}><Ionicons name="chevron-back" size={18} color={theme.colors.primary} /><Text style={s.back}>Back</Text></TouchableOpacity>
           <Text style={s.headerTitle}>Create Classroom</Text>
           <View style={{ width: 60 }} />
         </View>
@@ -145,7 +145,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
   return (
     <SafeAreaView style={s.container}>
       <View style={s.header}>
-        <TouchableOpacity onPress={onBack}><Text style={s.back}>← Back</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onBack} style={s.backRow}><Ionicons name="chevron-back" size={18} color={theme.colors.primary} /><Text style={s.back}>Back</Text></TouchableOpacity>
         <Text style={s.headerTitle} numberOfLines={1}>{classroom.name}</Text>
         <View style={{ width: 60 }} />
       </View>
@@ -331,6 +331,7 @@ const styles = (theme: any) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
   back: { color: theme.colors.primary, fontSize: 16, fontWeight: '600' },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start' },
   headerTitle: { color: theme.colors.textPrimary, fontSize: 16, fontWeight: '700', flex: 1, textAlign: 'center' },
 
   codeRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'baseline', gap: 6, marginBottom: 8 },

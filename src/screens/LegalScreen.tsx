@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 
 interface Props {
@@ -82,8 +83,9 @@ export function LegalScreen({ kind, onBack }: Props) {
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.colors.background }]}>
       <View style={[s.header, { borderBottomColor: theme.colors.border }]}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={[s.back, { color: theme.colors.primary }]}>← Back</Text>
+        <TouchableOpacity onPress={onBack} style={s.backRow}>
+          <Ionicons name="chevron-back" size={18} color={theme.colors.primary} />
+          <Text style={[s.back, { color: theme.colors.primary }]}>Back</Text>
         </TouchableOpacity>
         <Text style={[s.title, { color: theme.colors.textPrimary }]}>{title}</Text>
         <View style={{ width: 50 }} />
@@ -99,6 +101,7 @@ const s = StyleSheet.create({
   container: { flex: 1 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1 },
   back: { fontSize: 16, fontWeight: '500' },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   title: { fontSize: 17, fontWeight: '700' },
   scroll: { padding: 20, paddingBottom: 48 },
   body: { fontSize: 14, lineHeight: 22 },

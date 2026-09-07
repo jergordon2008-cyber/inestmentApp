@@ -289,11 +289,11 @@ function InlineQuestion({
     };
     if (i === question.correctIndex) return {
       bg: '#14532D22', border: theme.colors.success,
-      text: theme.colors.success, icon: '✓',
+      text: theme.colors.success, icon: 'checkmark' as const,
     };
     if (i === selected && i !== question.correctIndex) return {
       bg: '#7F1D1D22', border: theme.colors.danger,
-      text: theme.colors.danger, icon: '✗',
+      text: theme.colors.danger, icon: 'close' as const,
     };
     return {
       bg: theme.colors.surface, border: theme.colors.border,
@@ -345,7 +345,7 @@ function InlineQuestion({
                 </View>
                 <Text style={[s.optionText, { color: c.text, flex: 1 }]}>{opt}</Text>
                 {c.icon && (
-                  <Text style={{ color: c.text, fontSize: 16, fontWeight: '800' }}>{c.icon}</Text>
+                  <Ionicons name={c.icon} size={16} color={c.text} />
                 )}
               </TouchableOpacity>
             );
@@ -563,8 +563,9 @@ export function LessonScreen({ lesson, onBack, onLessonComplete }: Props) {
 
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={onBack} style={s.backBtn}>
-          <Text style={[s.backText, { color: theme.colors.textSecondary }]}>← Back</Text>
+        <TouchableOpacity onPress={onBack} style={[s.backBtn, s.backRow]}>
+          <Ionicons name="chevron-back" size={17} color={theme.colors.textSecondary} />
+          <Text style={[s.backText, { color: theme.colors.textSecondary }]}>Back</Text>
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center' }}>
           <View style={[s.tierPill, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary + '30' }]}>
@@ -659,7 +660,7 @@ export function LessonScreen({ lesson, onBack, onLessonComplete }: Props) {
         {questions.length === 0 && !quizComplete && (
           <AnimatedBlock delay={200}>
             <View style={[s.quizCTA, { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderStrong }]}>
-              <Text style={{ fontSize: 36, marginBottom: 12 }}>✅</Text>
+              <Ionicons name="checkmark-circle" size={36} color={theme.colors.success} style={{ marginBottom: 12 }} />
               <Text style={[s.quizCTATitle, { color: theme.colors.textPrimary }]}>Lesson Complete!</Text>
               <Text style={[s.quizCTASub, { color: theme.colors.textSecondary }]}>
                 You've read through this lesson. Mark it complete to earn your XP.
@@ -772,9 +773,16 @@ function FinalQuizQuestion({ question, index, answered, selected, onAnswer, them
             <Text style={[bs.quizBadgeText, { color: theme.colors.gold }]}>Q{index + 1} of {5}</Text>
           </View>
           {answered && (
-            <Text style={[bs.quizResult, { color: selected === question.correctIndex ? theme.colors.primary : theme.colors.danger }]}>
-              {selected === question.correctIndex ? '✓ Correct' : '✗ Try again next time'}
-            </Text>
+            <View style={bs.quizResultRow}>
+              <Ionicons
+                name={selected === question.correctIndex ? 'checkmark' : 'close'}
+                size={12}
+                color={selected === question.correctIndex ? theme.colors.primary : theme.colors.danger}
+              />
+              <Text style={[bs.quizResult, { color: selected === question.correctIndex ? theme.colors.primary : theme.colors.danger }]}>
+                {selected === question.correctIndex ? 'Correct' : 'Try again next time'}
+              </Text>
+            </View>
           )}
         </View>
         <Text style={[bs.quizQuestion, { color: theme.colors.textPrimary }]}>{question.question}</Text>
@@ -788,8 +796,8 @@ function FinalQuizQuestion({ question, index, answered, selected, onAnswer, them
                   <Text style={[bs.optionLetterText, { color: c.text }]}>{String.fromCharCode(65 + i)}</Text>
                 </View>
                 <Text style={[bs.optionText, { color: c.text, flex: 1 }]}>{opt}</Text>
-                {answered && i === question.correctIndex && <Text style={{ color: theme.colors.primary }}>✓</Text>}
-                {answered && i === selected && i !== question.correctIndex && <Text style={{ color: theme.colors.danger }}>✗</Text>}
+                {answered && i === question.correctIndex && <Ionicons name="checkmark" size={14} color={theme.colors.primary} />}
+                {answered && i === selected && i !== question.correctIndex && <Ionicons name="close" size={14} color={theme.colors.danger} />}
               </TouchableOpacity>
             );
           })}
@@ -812,6 +820,7 @@ const styles = (theme: any) => StyleSheet.create({
   container:  { flex: 1 },
   header:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
   backBtn:    { width: 60 },
+  backRow:    { flexDirection: 'row', alignItems: 'center', gap: 1 },
   backText:   { fontSize: 15, fontWeight: '500' },
   tierPill:   { paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, borderWidth: 1 },
   tierText:   { fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
@@ -866,6 +875,7 @@ const blockStyles = (theme: any) => StyleSheet.create({
   quizBadge:      { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   quizBadgeText:  { fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
   quizResult:     { fontSize: 12, fontWeight: '700' },
+  quizResultRow:  { flexDirection: 'row', alignItems: 'center', gap: 2 },
   quizQuestion:   { fontSize: 16, fontWeight: '700', lineHeight: 24, marginBottom: 14, letterSpacing: -0.2 },
   options:        { gap: 8 },
   option:         { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, borderWidth: 1.5 },

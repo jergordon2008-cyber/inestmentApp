@@ -148,7 +148,7 @@ export function CustomizeScreen({ onBack }: Props) {
             {ACCENT_OPTIONS.map(opt => (
               <TouchableOpacity key={opt.value} onPress={() => setAccentColor(opt.value)} style={sl.colorItem} activeOpacity={0.8}>
                 <View style={[sl.swatch, { backgroundColor: opt.value }, accentColor === opt.value && sl.swatchActive]}>
-                  {accentColor === opt.value && <Text style={sl.swatchCheck}>✓</Text>}
+                  {accentColor === opt.value && <Ionicons name="checkmark" size={16} color="#fff" />}
                 </View>
                 <Text style={[sl.colorName, { color: theme.colors.textTertiary }]}>{opt.name}</Text>
               </TouchableOpacity>
@@ -288,7 +288,7 @@ export function CustomizeScreen({ onBack }: Props) {
                         <Text style={[sl.toggleSub, { color: theme.colors.textTertiary }]}>{m.perkDescription}</Text>
                       </View>
                       {unlocked
-                        ? <Text style={{ fontSize: 14, color: theme.colors.success }}>✓</Text>
+                        ? <Ionicons name="checkmark" size={14} color={theme.colors.success} />
                         : <Text style={[sl.toggleSub, { color: theme.colors.textTertiary }]}>{m.xpRequired.toLocaleString()} XP</Text>
                       }
                     </View>
@@ -393,7 +393,6 @@ const sl = StyleSheet.create({
   colorItem: { alignItems: 'center', width: '16%' },
   swatch:      { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   swatchActive:{ borderWidth: 3, borderColor: '#fff', shadowColor: '#000', shadowOffset:{width:0,height:2}, shadowOpacity:0.4, shadowRadius:6, elevation:4 },
-  swatchCheck: { color: '#fff', fontSize: 16, fontWeight: '900' },
   colorName:   { fontSize: 9, fontWeight: '600', textAlign: 'center' },
 
   // Toggle rows

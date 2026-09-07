@@ -184,7 +184,7 @@ export function StockBrowserScreen({ onStockPress, onBack }: StockBrowserScreenP
           />
           {query.length > 0 && (
             <TouchableOpacity onPress={() => setQuery('')}>
-              <Text style={[styles.clearText, { color: theme.colors.textTertiary }]}>✕</Text>
+              <Ionicons name="close-circle" size={18} color={theme.colors.textTertiary} />
             </TouchableOpacity>
           )}
         </View>
@@ -292,12 +292,19 @@ function StockListItem({ stock, onPress, theme }: {
             <Text style={[styles.stockPrice, { color: theme.colors.textPrimary }]}>
               ${stock.price.toFixed(2)}
             </Text>
-            <Text style={[
-              styles.stockChange,
-              { color: isPositive ? theme.colors.success : theme.colors.danger },
-            ]}>
-              {isPositive ? '↑' : '↓'} {Math.abs(stock.changePercent).toFixed(2)}%
-            </Text>
+            <View style={styles.stockChangeRow}>
+              <Ionicons
+                name={isPositive ? 'caret-up' : 'caret-down'}
+                size={11}
+                color={isPositive ? theme.colors.success : theme.colors.danger}
+              />
+              <Text style={[
+                styles.stockChange,
+                { color: isPositive ? theme.colors.success : theme.colors.danger },
+              ]}>
+                {Math.abs(stock.changePercent).toFixed(2)}%
+              </Text>
+            </View>
           </View>
         </View>
       </Card>
@@ -419,7 +426,6 @@ const styles = StyleSheet.create({
   },
   searchIcon: { fontSize: 16, marginRight: 8 },
   searchInput: { flex: 1, fontSize: 15 },
-  clearText: { fontSize: 16, paddingHorizontal: 4 },
   
   // Fixes a React Native Web quirk where a horizontal ScrollView with no
   // explicit flexGrow/flexShrink stretches to fill the remaining vertical
@@ -459,4 +465,5 @@ const styles = StyleSheet.create({
   stockRight: { alignItems: 'flex-end' },
   stockPrice: { fontSize: 16, fontWeight: '600', marginBottom: 4 },
   stockChange: { fontSize: 13, fontWeight: '600' },
+  stockChangeRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
 });

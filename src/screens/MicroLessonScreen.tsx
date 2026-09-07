@@ -206,11 +206,16 @@ export function MicroLessonScreen({ onBack, onStockPress, onComplete }: MicroLes
                 },
               ]} />
             </View>
-            <Text style={[styles.progressText, { color: theme.colors.textTertiary }]}>
-              {secondsRead >= MIN_READ_SECONDS
-                ? (quizDone ? '✓ Ready to mark complete' : 'Quick check below before you finish')
-                : `Read time: ${secondsRead}s / ${MIN_READ_SECONDS}s minimum`}
-            </Text>
+            <View style={styles.progressRow}>
+              {secondsRead >= MIN_READ_SECONDS && quizDone && (
+                <Ionicons name="checkmark" size={12} color={theme.colors.textTertiary} />
+              )}
+              <Text style={[styles.progressText, { color: theme.colors.textTertiary }]}>
+                {secondsRead >= MIN_READ_SECONDS
+                  ? (quizDone ? 'Ready to mark complete' : 'Quick check below before you finish')
+                  : `Read time: ${secondsRead}s / ${MIN_READ_SECONDS}s minimum`}
+              </Text>
+            </View>
           </View>
         )}
 
@@ -234,7 +239,8 @@ export function MicroLessonScreen({ onBack, onStockPress, onComplete }: MicroLes
       <View style={[styles.footer, { borderTopColor: theme.colors.border, backgroundColor: theme.colors.background }]}>
         {todaysMicroLessonRead ? (
           <Button
-            label="✓ Already read today"
+            label="Already read today"
+            leftIcon={<Ionicons name="checkmark" size={16} color={theme.colors.textSecondary} />}
             onPress={onBack}
             variant="secondary"
             size="lg"
@@ -323,9 +329,17 @@ function QuickCheck({
         );
       })}
       {revealed && (
-        <Text style={{ fontSize: 12, lineHeight: 18, color: theme.colors.textSecondary, marginTop: 4, marginBottom: 12 }}>
-          {isCorrect ? '✓ Correct. ' : '✗ Not quite. '}{question.explanation}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginTop: 4, marginBottom: 12 }}>
+          <Ionicons
+            name={isCorrect ? 'checkmark' : 'close'}
+            size={13}
+            color={isCorrect ? theme.colors.success : theme.colors.danger}
+            style={{ marginTop: 2 }}
+          />
+          <Text style={{ flex: 1, fontSize: 12, lineHeight: 18, color: theme.colors.textSecondary }}>
+            {isCorrect ? 'Correct. ' : 'Not quite. '}{question.explanation}
+          </Text>
+        </View>
       )}
       <Button
         label={revealed ? 'Continue' : 'Check answer'}
@@ -409,6 +423,7 @@ const styles = StyleSheet.create({
   progressTrack: { height: 4, borderRadius: 2, overflow: 'hidden', marginBottom: 6 },
   progressFill: { height: '100%' },
   progressText: { fontSize: 11, fontWeight: '500', textAlign: 'center' },
+  progressRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 },
   
   footer: { paddingHorizontal: 20, paddingVertical: 14, paddingBottom: 24, borderTopWidth: 1 },
   

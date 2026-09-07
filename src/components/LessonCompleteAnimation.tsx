@@ -110,7 +110,7 @@ function AnimatedCheck({ color }: { color: string }) {
       cs.checkCircle,
       { backgroundColor: color + '20', borderColor: color, transform: [{ scale }], opacity },
     ]}>
-      <Text style={{ fontSize: 44 }}>✓</Text>
+      <Ionicons name="checkmark" size={44} color={color} />
     </Animated.View>
   );
 }

@@ -10,6 +10,7 @@ import {
   View, Text, StyleSheet, SafeAreaView, TextInput, TouchableOpacity,
   KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { signUp, signIn } from '../services/authService';
 import { showAlert } from '../utils/alert';
@@ -63,8 +64,9 @@ export function AuthScreen({ mode, onAuthed, onBack, onSwitchMode }: Props) {
     <SafeAreaView style={[s.container, { backgroundColor: theme.colors.background }]}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <View style={s.content}>
-          <TouchableOpacity onPress={onBack} style={s.backBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Text style={[s.backText, { color: theme.colors.textSecondary }]}>← Back</Text>
+          <TouchableOpacity onPress={onBack} style={[s.backBtn, s.backRow]} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Ionicons name="chevron-back" size={fs(17)} color={theme.colors.textSecondary} />
+            <Text style={[s.backText, { color: theme.colors.textSecondary }]}>Back</Text>
           </TouchableOpacity>
 
           <Text style={[s.title, { color: theme.colors.textPrimary }]}>
@@ -147,6 +149,7 @@ const s = StyleSheet.create({
   container: { flex: 1 },
   content:   { flex: 1, paddingHorizontal: sp(24), paddingTop: sp(20) },
   backBtn:   { marginBottom: sp(24) },
+  backRow:   { flexDirection: 'row', alignItems: 'center', gap: sp(2) },
   backText:  { fontSize: fs(15), fontWeight: '600' },
   title:     { fontSize: fs(26), fontWeight: '800', letterSpacing: -0.6, marginBottom: sp(8) },
   subtitle:  { fontSize: fs(14), lineHeight: fs(20), marginBottom: sp(28) },

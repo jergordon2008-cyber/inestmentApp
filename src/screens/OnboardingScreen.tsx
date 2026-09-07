@@ -111,12 +111,17 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
           />
         </View>
         <View style={styles.progressLabels}>
-          <TouchableOpacity onPress={handleBack} disabled={currentStep === 0}>
+          <TouchableOpacity onPress={handleBack} disabled={currentStep === 0} style={styles.progressBackRow}>
+            <Ionicons
+              name="chevron-back"
+              size={15}
+              color={currentStep === 0 ? theme.colors.textTertiary : theme.colors.textSecondary}
+            />
             <Text style={[
               styles.progressBack,
               { color: currentStep === 0 ? theme.colors.textTertiary : theme.colors.textSecondary },
             ]}>
-              ← Back
+              Back
             </Text>
           </TouchableOpacity>
           <Text style={[styles.progressText, { color: theme.colors.textSecondary }]}>
@@ -216,7 +221,7 @@ function PersonalizedResults({
         
         {/* Header */}
         <View style={styles.resultsHeader}>
-          <Text style={[styles.resultsEmoji]}>✨</Text>
+          <Ionicons name="sparkles" size={52} color={theme.colors.primary} style={styles.resultsIcon} />
           <Text style={[styles.resultsTitle, { color: theme.colors.textPrimary }]}>
             Your plan is ready
           </Text>
@@ -336,7 +341,7 @@ function PersonalizedResults({
 function TopicRow({ text, theme }: { text: string; theme: any }) {
   return (
     <View style={styles.topicRow}>
-      <Text style={[styles.topicCheck, { color: theme.colors.success }]}>✓</Text>
+      <Ionicons name="checkmark" size={16} color={theme.colors.success} />
       <Text style={[styles.topicText, { color: theme.colors.textPrimary }]}>{text}</Text>
     </View>
   );
@@ -368,6 +373,11 @@ const styles = StyleSheet.create({
   progressBack: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  progressBackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 1,
   },
   progressText: {
     fontSize: 12,
@@ -446,8 +456,7 @@ const styles = StyleSheet.create({
     paddingTop: 32,
     paddingBottom: 28,
   },
-  resultsEmoji: {
-    fontSize: 56,
+  resultsIcon: {
     marginBottom: 12,
   },
   resultsTitle: {
@@ -520,10 +529,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
-  },
-  topicCheck: {
-    fontSize: 16,
-    fontWeight: '700',
   },
   topicText: {
     flex: 1,

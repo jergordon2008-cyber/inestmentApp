@@ -172,7 +172,10 @@ function StudentDetail({ student, onBack, theme }: { student: User; onBack: () =
                       TIER {tier} — {done.length}/{tierLessons.length}
                     </Text>
                     {done.map(l => (
-                      <Text key={l.id} style={[s.posLine, { color: theme.colors.textSecondary }]}>✓ {l.title}</Text>
+                      <View key={l.id} style={s.posLineRow}>
+                        <Ionicons name="checkmark" size={fs(12)} color={theme.colors.textSecondary} />
+                        <Text style={[s.posLine, { color: theme.colors.textSecondary }]}>{l.title}</Text>
+                      </View>
                     ))}
                   </View>
                 );
@@ -250,4 +253,5 @@ const s = StyleSheet.create({
   detailValue: { fontSize: fs(14), fontWeight: '600', marginTop: sp(3) },
   bigValue: { fontSize: fs(26), fontWeight: '800', marginTop: sp(4) },
   posLine: { fontSize: fs(12), marginTop: sp(3) },
+  posLineRow: { flexDirection: 'row', alignItems: 'center', gap: sp(4) },
 });

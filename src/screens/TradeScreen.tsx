@@ -12,6 +12,7 @@ import { getStockSync } from '../services/marketDataFacade';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { TradeType, Trade } from '../types';
 import { BehaviorCoachModal, BehaviorBias } from '../components/BehaviorCoachModal';
+import { Ionicons } from '@expo/vector-icons';
 import { logEvent } from '../services/analyticsService';
 
 interface Props {
@@ -129,7 +130,7 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
       {/* Header */}
       <View style={s.header}>
         <TouchableOpacity onPress={onBack} style={s.backBtn}>
-          <Text style={[s.backText, { color: theme.colors.textSecondary }]}>✕</Text>
+          <Ionicons name="close" size={20} color={theme.colors.textSecondary} />
         </TouchableOpacity>
         <View style={s.stockHeader}>
           <CompanyLogo symbol={symbol} size={28} />

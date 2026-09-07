@@ -41,7 +41,10 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
   if (!stock) return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.colors.background }]}>
       <View style={s.header}>
-        <TouchableOpacity onPress={onBack}><Text style={[s.back, { color: theme.colors.primary }]}>← Back</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onBack} style={s.backRow}>
+          <Ionicons name="chevron-back" size={20} color={theme.colors.primary} />
+          <Text style={[s.back, { color: theme.colors.primary }]}>Back</Text>
+        </TouchableOpacity>
       </View>
       <Text style={[{ padding: 20, color: theme.colors.textSecondary }]}>Loading...</Text>
     </SafeAreaView>
@@ -57,7 +60,7 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
       {/* Header */}
       <View style={s.header}>
         <TouchableOpacity onPress={onBack} style={{ width: 44 }}>
-          <Text style={[s.back, { color: theme.colors.primary }]}>←</Text>
+          <Ionicons name="chevron-back" size={22} color={theme.colors.primary} />
         </TouchableOpacity>
         <Text style={[s.headerSym, { color: theme.colors.textPrimary }]}>{symbol}</Text>
         <View style={{ width: 44 }} />
@@ -115,9 +118,10 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
 
         {/* Position Banner */}
         {position && (
-          <View style={[s.positionBanner, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary + '30' }]}>
-            <Text style={[s.positionText, { color: theme.colors.primary }]}>
-              ✓ You own {position.shares.toFixed(4)} shares · Avg ${position.averageCost.toFixed(2)} ·{' '}
+          <View style={[s.positionBanner, s.positionBannerRow, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary + '30' }]}>
+            <Ionicons name="checkmark" size={13} color={theme.colors.primary} style={{ marginTop: 1 }} />
+            <Text style={[s.positionText, { flex: 1, color: theme.colors.primary }]}>
+              You own {position.shares.toFixed(4)} shares · Avg ${position.averageCost.toFixed(2)} ·{' '}
               <Text style={{ color: position.unrealizedGain >= 0 ? theme.colors.primary : theme.colors.danger }}>
                 {position.unrealizedGain >= 0 ? '+' : ''}{position.unrealizedGain.toFixed(2)} ({position.unrealizedGainPercent.toFixed(2)}%)
               </Text>
@@ -128,11 +132,13 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
         {/* Buy / Sell Buttons */}
         <View style={s.tradeRow}>
           <AnimatedPressable onPress={() => onTrade(symbol, 'buy')} style={[s.buyBtn, { backgroundColor: theme.colors.primary, shadowColor: theme.colors.primary }]}>
-            <Text style={s.buyBtnText} numberOfLines={1}>↑ Buy {symbol}</Text>
+            <Ionicons name="arrow-up" size={14} color="#fff" />
+            <Text style={s.buyBtnText} numberOfLines={1}>Buy {symbol}</Text>
           </AnimatedPressable>
           {position && (
             <AnimatedPressable onPress={() => onTrade(symbol, 'sell')} style={[s.sellBtn, { backgroundColor: theme.colors.danger + '15', borderColor: theme.colors.danger + '40' }]}>
-              <Text style={[s.sellBtnText, { color: theme.colors.danger }]}>↓  Sell</Text>
+              <Ionicons name="arrow-down" size={14} color={theme.colors.danger} />
+              <Text style={[s.sellBtnText, { color: theme.colors.danger }]}>Sell</Text>
             </AnimatedPressable>
           )}
         </View>
@@ -230,12 +236,14 @@ const styles = (theme: any) => StyleSheet.create({
   mcapLabel:  { fontSize: 10, fontWeight: '600', letterSpacing: 0.5, marginBottom: 3 },
   mcap:       { fontSize: 16, fontWeight: '700' },
   positionBanner:{ borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 14 },
+  positionBannerRow:{ flexDirection: 'row', alignItems: 'flex-start', gap: 5 },
+  backRow:    { flexDirection: 'row', alignItems: 'center', gap: 2 },
   positionText:  { fontSize: 13, fontWeight: '600', lineHeight: 18 },
   tradeRow:   { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  buyBtn:     { flex: 2, borderRadius: 16, paddingVertical: 14, alignItems: 'center', justifyContent: 'center',
+  buyBtn:     { flex: 2, borderRadius: 16, paddingVertical: 14, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center',
                 shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.45, shadowRadius: 16, elevation: 5 },
   buyBtnText: { color: '#fff', fontSize: 15, fontWeight: '800', textAlign: 'center' },
-  sellBtn:    { flex: 1, borderRadius: 16, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
+  sellBtn:    { flex: 1, borderRadius: 16, paddingVertical: 14, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
   sellBtnText:{ fontSize: 15, fontWeight: '700', textAlign: 'center' },
   tabRow:     { flexDirection: 'row', borderBottomWidth: 1, marginBottom: 14 },
   tabBtn:     { flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },

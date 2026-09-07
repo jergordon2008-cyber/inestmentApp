@@ -16,14 +16,15 @@ export interface JournalEntry {
   outcome?: number; // % gain/loss when closed
 }
 
+/** `icon` is an Ionicons name — the app's icon set. Was an emoji until Phase 3. */
 export const REASON_CONFIG: Record<TradeReason, { label: string; icon: string; color: string }> = {
-  fundamental: { label: 'Fundamentals',  icon: '📊', color: '#10B981' },
-  technical:   { label: 'Chart Signal',  icon: '📈', color: '#5B5FEF' },
-  news:        { label: 'News Event',    icon: '📰', color: '#F59E0B' },
-  plan:        { label: 'My Playbook',   icon: '📖', color: '#06B6D4' },
-  gut:         { label: 'Gut Feeling',   icon: '🤔', color: '#8B5CF6' },
-  tip:         { label: 'Tip/Social',    icon: '💬', color: '#F87171' },
-  fomo:        { label: 'FOMO',          icon: '🏃', color: '#EF4444' },
+  fundamental: { label: 'Fundamentals',  icon: 'bar-chart-outline',      color: '#10B981' },
+  technical:   { label: 'Chart Signal',  icon: 'trending-up-outline',    color: '#5B5FEF' },
+  news:        { label: 'News Event',    icon: 'newspaper-outline',      color: '#F59E0B' },
+  plan:        { label: 'My Playbook',   icon: 'book-outline',           color: '#06B6D4' },
+  gut:         { label: 'Gut Feeling',   icon: 'help-circle-outline',    color: '#8B5CF6' },
+  tip:         { label: 'Tip/Social',    icon: 'chatbubble-outline',     color: '#F87171' },
+  fomo:        { label: 'FOMO',          icon: 'trending-up',            color: '#EF4444' },
 };
 
 interface JournalState {

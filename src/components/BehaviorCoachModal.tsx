@@ -36,7 +36,8 @@ interface Props {
 }
 
 const BIAS_CONFIG: Record<BehaviorBias, {
-  emoji:       string;
+  /** Ionicons name — the app's icon set. */
+  icon:        string;
   title:       string;
   bias:        string;
   explanation: string;
@@ -45,7 +46,7 @@ const BIAS_CONFIG: Record<BehaviorBias, {
   color:       string;
 }> = {
   panic_sell: {
-    emoji:       '😰',
+    icon:        'alert-circle-outline',
     title:       'Panic Selling Alert',
     bias:        'Loss Aversion',
     explanation: 'Your brain processes investment losses 2.5× more painfully than equivalent gains feel good. This makes panic-selling feel rational when it usually isn\'t. Most drawdowns of this size recover within weeks.',
@@ -54,7 +55,7 @@ const BIAS_CONFIG: Record<BehaviorBias, {
     color:       '#F87171',
   },
   overtrading: {
-    emoji:       '⚡',
+    icon:        'flash-outline',
     title:       'Overtrading Warning',
     bias:        'Action Bias',
     explanation: 'The urge to "do something" is one of the most expensive biases in investing. Each unnecessary trade adds costs and often destroys value. Buffett says his best investment is often the one he didn\'t make.',
@@ -63,7 +64,7 @@ const BIAS_CONFIG: Record<BehaviorBias, {
     color:       '#F5A623',
   },
   premature_sell: {
-    emoji:       '✂️',
+    icon:        'cut-outline',
     title:       'Selling Your Winner Early',
     bias:        'Disposition Effect',
     explanation: 'Investors systematically sell winners too early and hold losers too long — the exact opposite of what produces returns. You feel "locking in the gain" is prudent, but winners often keep winning.',
@@ -119,7 +120,7 @@ export function BehaviorCoachModal({
 
         {/* Bias header */}
         <View style={bc.header}>
-          <Text style={bc.emoji}>{cfg.emoji}</Text>
+          <Ionicons name={cfg.icon as any} size={44} color={cfg.color} />
           <View style={{ flex: 1 }}>
             <View style={[bc.biasPill, { backgroundColor: cfg.color + '20', borderColor: cfg.color + '40' }]}>
               <Text style={[bc.biasName, { color: cfg.color }]}>{cfg.bias.toUpperCase()}</Text>

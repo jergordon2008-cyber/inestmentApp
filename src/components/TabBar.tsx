@@ -4,7 +4,7 @@
  * A pill highlight smoothly slides between tabs using spring physics.
  * Active tab: filled icon + indigo label + pill background
  * Inactive:   outline icon + muted label
- * Centre tab (Discover): raised capsule button — always highlighted
+ * Centre tab (Portfolio): raised capsule button — always highlighted
  */
 
 import React, { useEffect } from 'react';
@@ -22,7 +22,7 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '../context/ThemeContext';
 import { fs, sp, isTablet } from '../constants/responsive';
 
-export type TabName = 'home' | 'learn' | 'market' | 'social' | 'discover' | 'profile';
+export type TabName = 'learn' | 'portfolio' | 'me';
 
 interface TabBarProps { current: TabName; onTabPress: (tab: TabName) => void; }
 
@@ -35,12 +35,9 @@ const TABS: Array<{
   iconFilled: IoniconName;
   special?: boolean;
 }> = [
-  { name: 'home',     label: 'Home',    icon: 'home-outline',          iconFilled: 'home'              },
-  { name: 'learn',    label: 'Learn',   icon: 'book-outline',           iconFilled: 'book'              },
-  { name: 'market',   label: 'Market',  icon: 'trending-up-outline',    iconFilled: 'trending-up',      special: true },
-  { name: 'social',   label: 'Connect', icon: 'people-outline',         iconFilled: 'people'            },
-  { name: 'discover', label: 'Explore', icon: 'compass-outline',        iconFilled: 'compass'           },
-  { name: 'profile',  label: 'Me',      icon: 'person-outline',         iconFilled: 'person'            },
+  { name: 'learn',     label: 'Learn',     icon: 'book-outline',        iconFilled: 'book'         },
+  { name: 'portfolio', label: 'Portfolio', icon: 'trending-up-outline', iconFilled: 'trending-up', special: true },
+  { name: 'me',        label: 'Me',        icon: 'person-outline',      iconFilled: 'person'       },
 ];
 
 const PILL_H  = sp(32);

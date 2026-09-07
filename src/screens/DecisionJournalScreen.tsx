@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, TextInput, Modal } from 'react-native';
 import { showAlert } from '../utils/alert';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useDecisionJournalStore, REASON_CONFIG, TradeReason } from '../services/decisionJournalStore';
 
@@ -22,7 +23,7 @@ export function DecisionJournalScreen({ onBack }: Props) {
     <SafeAreaView style={s.container}>
       <View style={s.header}>
         <TouchableOpacity onPress={onBack}><Text style={s.back}>← Back</Text></TouchableOpacity>
-        <Text style={s.headerTitle}>📓 Decision Journal</Text>
+        <Text style={s.headerTitle}>Decision Journal</Text>
         <View style={{ width: 60 }} />
       </View>
 
@@ -31,7 +32,7 @@ export function DecisionJournalScreen({ onBack }: Props) {
           <TouchableOpacity key={t} onPress={() => setTab(t)}
             style={[s.tabBtn, tab === t && { borderBottomColor: theme.colors.primary, borderBottomWidth: 2 }]}>
             <Text style={[s.tabLabel, { color: tab === t ? theme.colors.primary : theme.colors.textTertiary }]}>
-              {t === 'insights' ? '💡 Insights' : `📋 Log (${entries.length})`}
+              {t === 'insights' ? 'Insights' : `Log (${entries.length})`}
             </Text>
           </TouchableOpacity>
         ))}
@@ -42,7 +43,7 @@ export function DecisionJournalScreen({ onBack }: Props) {
           <>
             {totalWithOutcome === 0 ? (
               <View style={s.empty}>
-                <Text style={{ fontSize: 40, marginBottom: 10 }}>📓</Text>
+                <Ionicons name="journal-outline" size={40} color={theme.colors.textTertiary} style={{ marginBottom: 10 }} />
                 <Text style={s.emptyTitle}>No closed trades yet</Text>
                 <Text style={s.emptySub}>Once you close positions you journaled, we'll show which reasons actually win for you.</Text>
               </View>
@@ -56,7 +57,7 @@ export function DecisionJournalScreen({ onBack }: Props) {
                   return (
                     <View key={r} style={[s.statCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                        <Text style={{ fontSize: 18 }}>{cfg.icon}</Text>
+                        <Ionicons name={cfg.icon as any} size={18} color={cfg.color} />
                         <Text style={[s.statLabel, { color: theme.colors.textPrimary }]}>{cfg.label}</Text>
                         <View style={{ flex: 1 }} />
                         <Text style={{ color: isPositive ? theme.colors.success : theme.colors.danger, fontWeight: '800' }}>
@@ -76,7 +77,7 @@ export function DecisionJournalScreen({ onBack }: Props) {
           <>
             {entries.length === 0 ? (
               <View style={s.empty}>
-                <Text style={{ fontSize: 40, marginBottom: 10 }}>📋</Text>
+                <Ionicons name="list-outline" size={40} color={theme.colors.textTertiary} style={{ marginBottom: 10 }} />
                 <Text style={s.emptyTitle}>No entries yet</Text>
                 <Text style={s.emptySub}>Your reasoning gets logged automatically before every trade.</Text>
               </View>
@@ -85,7 +86,7 @@ export function DecisionJournalScreen({ onBack }: Props) {
               return (
                 <View key={e.id} style={[s.logRow, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <Text style={{ fontSize: 16 }}>{cfg.icon}</Text>
+                    <Ionicons name={cfg.icon as any} size={16} color={cfg.color} />
                     <Text style={[s.logSymbol, { color: theme.colors.textPrimary }]}>{e.symbol}</Text>
                     <Text style={[s.logAction, { color: e.action === 'buy' ? theme.colors.success : theme.colors.danger }]}>
                       {e.action.toUpperCase()}
@@ -130,7 +131,7 @@ export function DecisionJournalModal({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onSkip}>
       <View style={[s.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.7)' }]}>
         <View style={[s.modalCard, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[s.modalTitle, { color: theme.colors.textPrimary }]}>📓 Why this trade?</Text>
+          <Text style={[s.modalTitle, { color: theme.colors.textPrimary }]}>Why this trade?</Text>
           <Text style={[s.modalSub, { color: theme.colors.textSecondary }]}>
             {action.toUpperCase()} {symbol} — recording your reason builds self-awareness over time.
           </Text>
@@ -142,7 +143,7 @@ export function DecisionJournalModal({
                 <TouchableOpacity key={r} onPress={() => setReason(r)}
                   style={[s.reasonChip, { borderColor: reason === r ? cfg.color : theme.colors.border },
                     reason === r && { backgroundColor: cfg.color + '20' }]}>
-                  <Text style={{ fontSize: 16 }}>{cfg.icon}</Text>
+                  <Ionicons name={cfg.icon as any} size={16} color={cfg.color} />
                   <Text style={[s.reasonChipText, { color: reason === r ? cfg.color : theme.colors.textSecondary }]}>{cfg.label}</Text>
                 </TouchableOpacity>
               );

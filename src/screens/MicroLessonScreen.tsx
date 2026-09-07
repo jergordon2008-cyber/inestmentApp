@@ -25,6 +25,7 @@ import {
   Animated,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
@@ -109,8 +110,9 @@ export function MicroLessonScreen({ onBack, onStockPress, onComplete }: MicroLes
           </Text>
         </TouchableOpacity>
         <View style={styles.streakBadge}>
+          <Ionicons name="flame" size={13} color={theme.colors.gold} />
           <Text style={styles.streakBadgeText}>
-            🔥 {currentStreak} day{currentStreak === 1 ? '' : 's'}
+            {currentStreak} day{currentStreak === 1 ? '' : 's'}
           </Text>
         </View>
         <View style={{ minWidth: 60 }} />
@@ -153,9 +155,12 @@ export function MicroLessonScreen({ onBack, onStockPress, onComplete }: MicroLes
                   padding="md" 
                   style={{ marginVertical: 12, backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary, borderWidth: 1 }}
                 >
-                  <Text style={[styles.calloutText, { color: theme.colors.textPrimary }]}>
-                    💡 {block.text}
-                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <Ionicons name="bulb-outline" size={16} color={theme.colors.primary} style={{ marginTop: 2 }} />
+                    <Text style={[styles.calloutText, { color: theme.colors.textPrimary, flex: 1 }]}>
+                      {block.text}
+                    </Text>
+                  </View>
                 </Card>
               );
             }
@@ -259,7 +264,7 @@ export function MicroLessonScreen({ onBack, onStockPress, onComplete }: MicroLes
               opacity: celebrateAnim,
             },
           ]}>
-            <Text style={styles.celebrationEmoji}>🔥</Text>
+            <Ionicons name="flame" size={48} color={theme.colors.gold} style={{ marginBottom: 8 }} />
             <Text style={[styles.celebrationTitle, { color: theme.colors.textPrimary }]}>
               {streakUpdate.after > streakUpdate.before 
                 ? `${streakUpdate.after} day streak!`
@@ -372,6 +377,9 @@ const styles = StyleSheet.create({
   },
   closeText: { fontSize: 16, fontWeight: '500' },
   streakBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     backgroundColor: 'rgba(245, 158, 11, 0.15)',
     paddingHorizontal: 12,
     paddingVertical: 5,

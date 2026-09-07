@@ -4,6 +4,7 @@ import {
   TouchableOpacity, TextInput,
 } from 'react-native';
 import { showAlert } from '../utils/alert';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useClassroomStore, Classroom, Assignment, ClassMember } from '../services/classroomStore';
 import { useUserStore } from '../services/userStore';
@@ -54,16 +55,16 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
           <View style={{ width: 60 }} />
         </View>
         <ScrollView contentContainerStyle={s.centered}>
-          <Text style={{ fontSize: 64, textAlign: 'center', marginBottom: 16 }}>🏫</Text>
+          <Ionicons name="school-outline" size={64} color={theme.colors.primary} style={{ alignSelf: 'center', marginBottom: 16 }} />
           <Text style={[s.bigTitle, { color: theme.colors.textPrimary }]}>Investment Classroom</Text>
           <Text style={[s.subtitle, { color: theme.colors.textSecondary }]}>
             For schools and investing clubs — assign lessons, track portfolios, and compete together.
           </Text>
           <TouchableOpacity style={[s.primaryBtn, { backgroundColor: theme.colors.primary }]} onPress={() => { setRole('teacher'); setSetupPhase('create'); }}>
-            <Text style={s.primaryBtnText}>👩‍🏫  Create a Classroom</Text>
+            <Text style={s.primaryBtnText}>Create a Classroom</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[s.secondaryBtn, { borderColor: theme.colors.border }]} onPress={() => { setRole('student'); setSetupPhase('join'); }}>
-            <Text style={[s.secondaryBtnText, { color: theme.colors.textPrimary }]}>🎒  Join with a Code</Text>
+            <Text style={[s.secondaryBtnText, { color: theme.colors.textPrimary }]}>Join with a Code</Text>
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
@@ -202,9 +203,15 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                   .sort((a: ClassMember, b: ClassMember) => (b.lessonsCompleted ?? 0) - (a.lessonsCompleted ?? 0))
                   .map((m: ClassMember, i: number) => (
                     <View key={m.id} style={[s.studentRow, { backgroundColor: theme.colors.surface, borderColor: i === 0 ? theme.colors.gold + '60' : theme.colors.border }]}>
-                      <Text style={[s.studentMeta, { width: 22, textAlign: 'center', color: i === 0 ? theme.colors.gold : theme.colors.textTertiary, fontWeight: '800' }]}>
-                        {i === 0 ? '🏆' : `#${i + 1}`}
-                      </Text>
+                      {i === 0 ? (
+                        <View style={{ width: 22, alignItems: 'center' }}>
+                          <Ionicons name="trophy" size={14} color={theme.colors.gold} />
+                        </View>
+                      ) : (
+                        <Text style={[s.studentMeta, { width: 22, textAlign: 'center', color: theme.colors.textTertiary, fontWeight: '800' }]}>
+                          {`#${i + 1}`}
+                        </Text>
+                      )}
                       <View style={[s.avatar, { backgroundColor: theme.colors.primary + '20' }]}>
                         <Text style={[s.avatarText, { color: theme.colors.primary }]}>{m.name.charAt(0).toUpperCase()}</Text>
                       </View>
@@ -296,7 +303,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                   onPress={() => {
                     postAnnouncement(classroom.id, { title: annTitle, body: annBody, postedBy: user?.displayName ?? 'Teacher', pinned: false });
                     setAnnTitle(''); setAnnBody('');
-                    showAlert('Posted! 📢', 'Your announcement is live.');
+                    showAlert('Posted', 'Your announcement is live.');
                   }}
                 >
                   <Text style={s.primaryBtnText}>Post</Text>

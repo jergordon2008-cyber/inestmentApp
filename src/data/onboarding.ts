@@ -19,7 +19,8 @@ export interface OnboardingQuestion {
   question: string;
   subtitle?: string;
   options: OnboardingOption[];
-  illustration?: string;  // emoji or asset name
+  /** Ionicons name — the app's icon set. */
+  illustration?: string;  // Ionicons name — the app's icon set
 }
 
 export interface OnboardingOption {
@@ -42,7 +43,7 @@ export const onboardingQuestions: OnboardingQuestion[] = [
     id: 'experience',
     question: 'How much do you know about investing?',
     subtitle: 'There\'s no wrong answer — we\'ll tailor lessons to your level',
-    illustration: '🎓',
+    illustration: 'school-outline',
     options: [
       {
         id: 'none',
@@ -75,7 +76,7 @@ export const onboardingQuestions: OnboardingQuestion[] = [
     id: 'goal',
     question: 'What\'s your main goal?',
     subtitle: 'This helps us prioritize what to teach you first',
-    illustration: '🎯',
+    illustration: 'locate-outline',
     options: [
       {
         id: 'retirement',
@@ -108,7 +109,7 @@ export const onboardingQuestions: OnboardingQuestion[] = [
     id: 'riskTolerance',
     question: 'If your portfolio dropped 20%, how would you feel?',
     subtitle: 'Imagine you have $10,000 invested and it\'s suddenly worth $8,000',
-    illustration: '😰',
+    illustration: 'pulse-outline',
     options: [
       {
         id: 'conservative',
@@ -162,7 +163,7 @@ export const onboardingQuestions: OnboardingQuestion[] = [
     id: 'commitment',
     question: 'How often will you engage with the app?',
     subtitle: 'Be honest — we\'ll match the experience to your reality',
-    illustration: '📱',
+    illustration: 'phone-portrait-outline',
     options: [
       {
         id: 'casual',

@@ -24,16 +24,17 @@ export type Plan = 'free' | 'premium';
 // back to false (and remove it) when billing is ready to turn back on.
 export const PREMIUM_DISABLED = true;
 
+/** `icon` values are Ionicons names — the app's icon set. */
 export const PREMIUM_FEATURES = {
-  timeMachine: { name: 'Time Machine', description: 'Trade through real historical crashes & bull runs', icon: '⏳' },
-  futureSim: { name: 'Future Simulator', description: 'See your wealth 5, 10, 30 years from now', icon: '🔮' },
-  investorDNA: { name: 'Investor DNA', description: 'Your full personality archetype & sharing card', icon: '🧬' },
-  healthScore: { name: 'Portfolio Health Score', description: 'Full breakdown + improvement tips', icon: '📊' },
-  moodGuard: { name: 'Mood Guardrails', description: 'Emotional protection before every trade', icon: '🎭' },
-  aiTutorUnlimited: { name: 'AI Tutor', description: 'Coming soon', icon: '🤖' },
-  advancedPlaybooks: { name: 'Advanced Playbooks', description: 'All 6 strategies unlocked', icon: '📖' },
-  community: { name: 'Community', description: 'Leaderboards, challenges, forum', icon: '🏆' },
-  advancedLessons: { name: 'Tier 2 & 3 Lessons', description: 'Active investing & mastery curriculum', icon: '🎓' },
+  timeMachine: { name: 'Time Machine', description: 'Trade through real historical crashes & bull runs', icon: 'time-outline' },
+  futureSim: { name: 'Future Simulator', description: 'See your wealth 5, 10, 30 years from now', icon: 'telescope-outline' },
+  investorDNA: { name: 'Investor DNA', description: 'Your full personality archetype & sharing card', icon: 'fitness-outline' },
+  healthScore: { name: 'Portfolio Health Score', description: 'Full breakdown + improvement tips', icon: 'pulse-outline' },
+  moodGuard: { name: 'Mood Guardrails', description: 'Emotional protection before every trade', icon: 'shield-checkmark-outline' },
+  aiTutorUnlimited: { name: 'AI Tutor', description: 'Coming soon', icon: 'chatbubble-ellipses-outline' },
+  advancedPlaybooks: { name: 'Advanced Playbooks', description: 'All 6 strategies unlocked', icon: 'book-outline' },
+  community: { name: 'Community', description: 'Leaderboards, challenges, forum', icon: 'trophy-outline' },
+  advancedLessons: { name: 'Tier 2 & 3 Lessons', description: 'Active investing & mastery curriculum', icon: 'school-outline' },
 } as const;
 
 export type PremiumFeatureKey = keyof typeof PREMIUM_FEATURES;

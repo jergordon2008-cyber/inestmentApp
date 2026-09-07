@@ -25,7 +25,7 @@ import { getChallengeForLesson } from '../data/lessonChallenges';
 import { MoodGuardrailModal } from '../screens/MoodGuardrailModal';
 import { DecisionJournalModal } from '../screens/DecisionJournalScreen';
 import { AIExplainModal } from '../components/AIExplainModal';
-import { navigate, replace, goBack } from './navigationRef';
+import { navigate, replace, goBack, goTab } from './navigationRef';
 import type { RootStackParamList } from './types';
 import type { Trade, TradeType } from '../types';
 
@@ -167,7 +167,7 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
     }
     setPendingThesis(null);
     // Land on the portfolio so the student sees the position they just opened.
-    navigate('Tabs', { screen: 'Market' } as any);
+    goTab('Portfolio');
   };
 
   // AI Tutor is temporarily disabled (usage limits aren't wired up yet)

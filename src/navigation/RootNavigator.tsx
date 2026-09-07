@@ -31,10 +31,14 @@ import { tier2Lessons } from '../data/tier2curriculum';
 import { tier3Lessons } from '../data/tier3curriculum';
 import { getChallengeForLesson } from '../data/lessonChallenges';
 import { TabBar, TabName } from '../components/TabBar';
+import { FEATURES } from '../config/features';
 import { useAppFlow } from './AppFlow';
 import { useAuthActions } from './AuthFlow';
-import { navigate, replace } from './navigationRef';
-import type { RootStackParamList, TransitionalTabParamList } from './types';
+import { navigate, replace, goTab } from './navigationRef';
+import type {
+  RootStackParamList, TabParamList,
+  LearnStackParamList, PortfolioStackParamList, MeStackParamList,
+} from './types';
 import type { TradeType } from '../types';
 
 // Auth
@@ -82,7 +86,10 @@ import { CommunityScreen } from '../screens/CommunityScreen';
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 const Stack = createNativeStackNavigator<RootStackParamList>();
-const Tab = createBottomTabNavigator<TransitionalTabParamList>();
+const Tab = createBottomTabNavigator<TabParamList>();
+const LearnStack = createNativeStackNavigator<LearnStackParamList>();
+const PortfolioStack = createNativeStackNavigator<PortfolioStackParamList>();
+const MeStack = createNativeStackNavigator<MeStackParamList>();
 
 function useNav() { return useNavigation<Nav>(); }
 
@@ -93,28 +100,30 @@ function useNav() { return useNavigation<Nav>(); }
  */
 function useGoBack() {
   const nav = useNav();
-  const back = useGoBack();
   return React.useCallback(() => {
     if (nav.canGoBack()) nav.goBack();
-    else navigate('Tabs', { screen: 'Home' } as any);
+    else goTab('Learn');
   }, [nav]);
 }
 const findLesson = (id: string) =>
   tier1Lessons.find(l => l.id === id) || tier2Lessons.find(l => l.id === id) || tier3Lessons.find(l => l.id === id) || null;
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────
-// The existing Reanimated TabBar is reused as-is; only the source of "which
-// tab is active" changes, from component state to the navigator's state.
+// Three tabs, each owning a stack so it keeps its own back history:
+//   Learn      — where you study        (Home landing, curriculum, skill tree, micro lessons)
+//   Portfolio  — where you trade        (market + positions, and the two journals about them)
+//   Me         — everything about you   (profile, classroom, settings)
+// The existing Reanimated TabBar is reused; only its tab list got shorter.
 
-const ROUTE_TO_TAB: Record<keyof TransitionalTabParamList, TabName> = {
-  Home: 'home', Learn: 'learn', Market: 'market', Social: 'social', Discover: 'discover', Me: 'profile',
+const ROUTE_TO_TAB: Record<keyof TabParamList, TabName> = {
+  Learn: 'learn', Portfolio: 'portfolio', Me: 'me',
 };
 const TAB_TO_ROUTE = Object.fromEntries(
   Object.entries(ROUTE_TO_TAB).map(([route, tab]) => [tab, route]),
-) as Record<TabName, keyof TransitionalTabParamList>;
+) as Record<TabName, keyof TabParamList>;
 
 function AppTabBar({ state, navigation }: BottomTabBarProps) {
-  const routeName = state.routeNames[state.index] as keyof TransitionalTabParamList;
+  const routeName = state.routeNames[state.index] as keyof TabParamList;
   return (
     <TabBar
       current={ROUTE_TO_TAB[routeName]}
@@ -123,47 +132,117 @@ function AppTabBar({ state, navigation }: BottomTabBarProps) {
   );
 }
 
-function HomeTab() {
+// ── Learn tab ────────────────────────────────────────────────────────────────
+
+function LearnHomeRoute() {
   const flow = useAppFlow();
+  const nav = useNavigation<NativeStackNavigationProp<LearnStackParamList>>();
   return (
     <HomeScreen
       onLessonPress={flow.openLesson}
-      onPortfolioPress={() => navigate('Tabs', { screen: 'Market' } as any)}
+      onPortfolioPress={() => goTab('Portfolio')}
       onSignalPress={flow.openStock}
-      onMicroLessonPress={() => navigate('MicroLesson')}
-      onJournalPress={() => navigate('TradeJournal')}
+      onMicroLessonPress={() => nav.navigate('MicroLesson')}
+      onAllLessonsPress={() => nav.navigate('LessonsList')}
+      onJournalPress={() => goTab('Portfolio', 'TradeJournal')}
       onBrowseStocksPress={() => navigate('StockBrowser')}
     />
   );
 }
 
-function LearnTab() {
+function LessonsListRoute() {
   const flow = useAppFlow();
+  const nav = useNavigation<NativeStackNavigationProp<LearnStackParamList>>();
   return (
     <LessonsListScreen
       onLessonPress={flow.openLesson}
-      onSkillTreePress={() => navigate('SkillTree')}
+      onSkillTreePress={() => nav.navigate('SkillTree')}
       onSubscribePress={() => flow.openSubscription('Tier 2 & 3 Lessons')}
     />
   );
 }
 
-function MarketTab() {
+function LearnTab() {
+  return (
+    <LearnStack.Navigator id={undefined} screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+      <LearnStack.Screen name="LearnHome" component={LearnHomeRoute} />
+      <LearnStack.Screen name="LessonsList" component={LessonsListRoute} />
+      <LearnStack.Screen name="SkillTree" component={SkillTreeRoute} />
+      <LearnStack.Screen name="MicroLesson" component={MicroLessonRoute} />
+    </LearnStack.Navigator>
+  );
+}
+
+// ── Portfolio tab ────────────────────────────────────────────────────────────
+
+function PortfolioHomeRoute() {
   const flow = useAppFlow();
+  const nav = useNavigation<NativeStackNavigationProp<PortfolioStackParamList>>();
   return (
     <MarketScreen
       onStockPress={flow.openStock}
       onTradePress={flow.openTradeDirect}
       onBrowsePress={() => navigate('StockBrowser')}
+      onTradeJournalPress={() => nav.navigate('TradeJournal')}
+      onDecisionJournalPress={() => nav.navigate('DecisionJournal')}
     />
   );
 }
 
-function SocialTab() {
-  return <SocialScreen onClassroomPress={() => navigate('Classroom')} />;
+function PortfolioTab() {
+  return (
+    <PortfolioStack.Navigator id={undefined} screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+      <PortfolioStack.Screen name="PortfolioHome" component={PortfolioHomeRoute} />
+      <PortfolioStack.Screen name="TradeJournal" component={TradeJournalRoute} />
+      <PortfolioStack.Screen name="DecisionJournal" component={backOnly(DecisionJournalScreen)} />
+    </PortfolioStack.Navigator>
+  );
 }
 
-function DiscoverTab() {
+// ── Me tab ───────────────────────────────────────────────────────────────────
+
+// ProfileScreen renders each Activity row only when it is handed a handler,
+// so an off flag removes the row rather than showing a disabled one.
+function MeHomeRoute() {
+  const flow = useAppFlow();
+  const auth = useAuthActions();
+  const nav = useNavigation<NativeStackNavigationProp<MeStackParamList>>();
+  return (
+    <ProfileScreen
+      onSignOut={auth.onSignOut}
+      onRestartOnboarding={auth.onRestartOnboarding}
+      onJournalPress={() => goTab('Portfolio', 'TradeJournal')}
+      onClassroomPress={() => nav.navigate('Classroom')}
+      onPrivacyPress={() => nav.navigate('Legal', { kind: 'privacy' })}
+      onTermsPress={() => nav.navigate('Legal', { kind: 'terms' })}
+      onBehavioralAssessmentPress={FEATURES.behavioralQuiz ? () => navigate('BehavioralAssessment') : undefined}
+      onPlaybooksPress={FEATURES.playbooks ? () => navigate('Playbooks') : undefined}
+      onMacroDashboardPress={FEATURES.marketCycle ? () => navigate('MacroDashboard') : undefined}
+      onTutorChatPress={FEATURES.aiTutor ? flow.openTutorChat : undefined}
+      onCustomizePress={() => nav.navigate('Customize')}
+      onAdminPress={() => nav.navigate('Admin')}
+      isAdmin={auth.isAdmin}
+    />
+  );
+}
+
+function MeTab() {
+  return (
+    <MeStack.Navigator id={undefined} screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+      <MeStack.Screen name="MeHome" component={MeHomeRoute} />
+      <MeStack.Screen name="Classroom" component={ClassroomRoute} />
+      <MeStack.Screen name="Customize" component={backOnly(CustomizeScreen)} />
+      <MeStack.Screen name="Legal" component={LegalRoute} />
+      <MeStack.Screen name="Admin" component={AdminRoute} />
+      <MeStack.Screen name="Analytics" component={backOnly(AnalyticsDashboardScreen)} />
+    </MeStack.Navigator>
+  );
+}
+
+// The Explore and Connect screens no longer have tabs. They stay registered as
+// routes (reachable at /explore and /connect) until step 4 flags them off.
+
+function DiscoverRoute() {
   const flow = useAppFlow();
   return (
     <DiscoverScreen
@@ -171,48 +250,28 @@ function DiscoverTab() {
       onPlaybooksPress={() => navigate('Playbooks')}
       onMacroDashboardPress={() => navigate('MacroDashboard')}
       onTutorChatPress={flow.openTutorChat}
-      onCustomizePress={() => navigate('Customize')}
-      onClassroomPress={() => navigate('Classroom')}
+      onCustomizePress={() => goTab('Me', 'Customize')}
+      onClassroomPress={() => goTab('Me', 'Classroom')}
       onTimeMachinePress={() => flow.openGated('TimeMachine', 'timeMachine', 'Time Machine')}
       onInvestorDNAPress={() => flow.openGated('InvestorDNA', 'investorDNA', 'Investor DNA')}
       onFutureSimPress={() => flow.openGated('FutureSimulator', 'futureSim', 'Future Simulator')}
       onHealthScorePress={() => flow.openGated('PortfolioHealth', 'healthScore', 'Portfolio Health Score')}
-      onSkillTreePress={() => navigate('SkillTree')}
-      onDecisionJournalPress={() => navigate('DecisionJournal')}
+      onSkillTreePress={() => goTab('Learn', 'SkillTree')}
+      onDecisionJournalPress={() => goTab('Portfolio', 'DecisionJournal')}
       onSubscribePress={() => flow.openSubscription()}
     />
   );
 }
 
-function MeTab() {
-  const flow = useAppFlow();
-  const auth = useAuthActions();
-  return (
-    <ProfileScreen
-      onSignOut={auth.onSignOut}
-      onRestartOnboarding={auth.onRestartOnboarding}
-      onJournalPress={() => navigate('TradeJournal')}
-      onPrivacyPress={() => navigate('Legal', { kind: 'privacy' })}
-      onTermsPress={() => navigate('Legal', { kind: 'terms' })}
-      onBehavioralAssessmentPress={() => navigate('BehavioralAssessment')}
-      onPlaybooksPress={() => navigate('Playbooks')}
-      onMacroDashboardPress={() => navigate('MacroDashboard')}
-      onTutorChatPress={flow.openTutorChat}
-      onCustomizePress={() => navigate('Customize')}
-      onAdminPress={() => navigate('Admin')}
-      isAdmin={auth.isAdmin}
-    />
-  );
+function SocialRoute() {
+  return <SocialScreen onClassroomPress={() => goTab('Me', 'Classroom')} />;
 }
 
 function Tabs() {
   return (
     <Tab.Navigator id={undefined} screenOptions={{ headerShown: false }} tabBar={props => <AppTabBar {...props} />}>
-      <Tab.Screen name="Home" component={HomeTab} />
       <Tab.Screen name="Learn" component={LearnTab} />
-      <Tab.Screen name="Market" component={MarketTab} />
-      <Tab.Screen name="Social" component={SocialTab} />
-      <Tab.Screen name="Discover" component={DiscoverTab} />
+      <Tab.Screen name="Portfolio" component={PortfolioTab} />
       <Tab.Screen name="Me" component={MeTab} />
     </Tab.Navigator>
   );
@@ -222,13 +281,11 @@ function Tabs() {
 
 function WelcomeRoute() {
   const nav = useNav();
-  const back = useGoBack();
   return <WelcomeScreen onGetStarted={() => nav.navigate('Signup')} onSignIn={() => nav.navigate('Login')} />;
 }
 
 function SignupRoute() {
   const nav = useNav();
-  const back = useGoBack();
   const auth = useAuthActions();
   return (
     <AuthScreen
@@ -245,7 +302,6 @@ function SignupRoute() {
 
 function LoginRoute() {
   const nav = useNav();
-  const back = useGoBack();
   const auth = useAuthActions();
   return (
     <AuthScreen
@@ -273,7 +329,7 @@ function LessonRoute() {
 
   // A deep link to a lesson id that no longer exists: bounce rather than
   // render a blank screen.
-  React.useEffect(() => { if (!lesson) nav.goBack(); }, [lesson]);
+  React.useEffect(() => { if (!lesson) back(); }, [lesson]);
   if (!lesson) return null;
 
   return (
@@ -292,7 +348,7 @@ function LessonChallengeRoute() {
   const { lessonId, lessonTitle } = useRoute<RouteProp<RootStackParamList, 'LessonChallenge'>>().params;
   const challenge = getChallengeForLesson(lessonId);
 
-  React.useEffect(() => { if (!challenge) nav.goBack(); }, [challenge]);
+  React.useEffect(() => { if (!challenge) back(); }, [challenge]);
   if (!challenge) return null;
 
   return (
@@ -307,14 +363,12 @@ function LessonChallengeRoute() {
 }
 
 function StockBrowserRoute() {
-  const nav = useNav();
   const back = useGoBack();
   const flow = useAppFlow();
   return <StockBrowserScreen onStockPress={flow.openStock} onBack={back} />;
 }
 
 function StockDetailRoute() {
-  const nav = useNav();
   const back = useGoBack();
   const flow = useAppFlow();
   // `fromBrowser` is no longer needed to decide where Back goes — the stack
@@ -332,7 +386,6 @@ function StockDetailRoute() {
 }
 
 function TradeRoute() {
-  const nav = useNav();
   const back = useGoBack();
   const flow = useAppFlow();
   const params = useRoute<RouteProp<RootStackParamList, 'Trade'>>().params;
@@ -350,41 +403,36 @@ function TradeRoute() {
 }
 
 function SubscriptionRoute() {
-  const nav = useNav();
   const back = useGoBack();
   const { lockedFeature } = useRoute<RouteProp<RootStackParamList, 'Subscription'>>().params ?? {};
   return <SubscriptionScreen onBack={back} lockedFeature={lockedFeature} onSubscribed={back} />;
 }
 
 function LegalRoute() {
-  const nav = useNav();
   const back = useGoBack();
-  const { kind } = useRoute<RouteProp<RootStackParamList, 'Legal'>>().params;
+  const { kind } = useRoute<RouteProp<MeStackParamList, 'Legal'>>().params;
   return <LegalScreen kind={kind === 'terms' ? 'terms' : 'privacy'} onBack={back} />;
 }
 
 function SkillTreeRoute() {
-  const nav = useNav();
   const back = useGoBack();
   const flow = useAppFlow();
   return <SkillTreeScreen onBack={back} onLessonPress={flow.openLessonFromSkillTree} />;
 }
 
 function ClassroomRoute() {
-  const nav = useNav();
   const back = useGoBack();
   const flow = useAppFlow();
   return (
     <ClassroomScreen
       onBack={back}
       onLessonPress={flow.openLesson}
-      onBehavioralAssessmentPress={() => navigate('BehavioralAssessment')}
+      onBehavioralAssessmentPress={FEATURES.behavioralQuiz ? () => navigate('BehavioralAssessment') : undefined}
     />
   );
 }
 
 function PlaybookDetailRoute() {
-  const nav = useNav();
   const back = useGoBack();
   const flow = useAppFlow();
   const { playbookId } = useRoute<RouteProp<RootStackParamList, 'PlaybookDetail'>>().params;
@@ -394,7 +442,6 @@ function PlaybookDetailRoute() {
 /** Screens whose only prop is onBack. */
 function backOnly<P extends { onBack: () => void }>(Screen: React.ComponentType<P>) {
   return function Route() {
-    const nav = useNav();
   const back = useGoBack();
     return <Screen {...({ onBack: back } as P)} />;
   };
@@ -406,7 +453,6 @@ function premiumScreen(
   label: string,
 ) {
   return function Route() {
-    const nav = useNav();
   const back = useGoBack();
     const flow = useAppFlow();
     const isPremium = useSubscriptionStore(s => s.isPremium());
@@ -414,35 +460,31 @@ function premiumScreen(
   };
 }
 
-const StockJournalRoute = () => {
-  const nav = useNav();
+const TradeJournalRoute = () => {
   const back = useGoBack();
   const flow = useAppFlow();
   return <TradeJournalReviewScreen onBack={back} onStockPress={flow.openStock} />;
 };
 
 const MicroLessonRoute = () => {
-  const nav = useNav();
   const back = useGoBack();
   const flow = useAppFlow();
   return <MicroLessonScreen onBack={back} onStockPress={flow.openStock} onComplete={back} />;
 };
 
 const AdminRoute = () => {
-  const nav = useNav();
   const back = useGoBack();
-  return <AdminScreen onBack={back} onAnalyticsPress={() => navigate('Analytics')} />;
+  const nav = useNavigation<NativeStackNavigationProp<MeStackParamList>>();
+  return <AdminScreen onBack={back} onAnalyticsPress={() => nav.navigate('Analytics')} />;
 };
 
 const BehavioralAssessmentRoute = () => {
-  const nav = useNav();
   const back = useGoBack();
   const flow = useAppFlow();
   return <BehavioralAssessmentScreen onBack={back} onComplete={back} onLessonPress={flow.openLesson} />;
 };
 
 const PlaybooksRoute = () => {
-  const nav = useNav();
   const back = useGoBack();
   const flow = useAppFlow();
   return (
@@ -455,21 +497,18 @@ const PlaybooksRoute = () => {
 };
 
 const MacroDashboardRoute = () => {
-  const nav = useNav();
   const back = useGoBack();
   const flow = useAppFlow();
   return <MacroDashboardScreen onBack={back} onLessonPress={flow.openLesson} />;
 };
 
 const TutorChatRoute = () => {
-  const nav = useNav();
   const back = useGoBack();
   const flow = useAppFlow();
   return <AiTutorScreen onBack={back} onLessonPress={flow.openLesson} />;
 };
 
 const InvestorDNARoute = () => {
-  const nav = useNav();
   const back = useGoBack();
   const flow = useAppFlow();
   const isPremium = useSubscriptionStore(s => s.isPremium());
@@ -512,28 +551,22 @@ export function RootNavigator() {
           <Stack.Screen name="Subscription" component={SubscriptionRoute} />
           <Stack.Screen name="Leaderboard" component={backOnly(LeaderboardScreen)} />
 
-          {/* Tab-local screens (move into a tab stack in step 3) */}
-          <Stack.Screen name="SkillTree" component={SkillTreeRoute} />
-          <Stack.Screen name="MicroLesson" component={MicroLessonRoute} />
-          <Stack.Screen name="TradeJournal" component={StockJournalRoute} />
-          <Stack.Screen name="DecisionJournal" component={backOnly(DecisionJournalScreen)} />
-          <Stack.Screen name="Classroom" component={ClassroomRoute} />
-          <Stack.Screen name="Customize" component={backOnly(CustomizeScreen)} />
-          <Stack.Screen name="Legal" component={LegalRoute} />
-          <Stack.Screen name="Admin" component={AdminRoute} />
-          <Stack.Screen name="Analytics" component={backOnly(AnalyticsDashboardScreen)} />
-
-          {/* Step 4 puts these behind a feature flag */}
-          <Stack.Screen name="BehavioralAssessment" component={BehavioralAssessmentRoute} />
-          <Stack.Screen name="Playbooks" component={PlaybooksRoute} />
-          <Stack.Screen name="PlaybookDetail" component={PlaybookDetailRoute} />
-          <Stack.Screen name="MacroDashboard" component={MacroDashboardRoute} />
-          <Stack.Screen name="TutorChat" component={TutorChatRoute} />
-          <Stack.Screen name="InvestorDNA" component={InvestorDNARoute} />
-          <Stack.Screen name="TimeMachine" component={premiumScreen(TimeMachineScreen, 'Time Machine')} />
-          <Stack.Screen name="FutureSimulator" component={premiumScreen(FutureSimulatorScreen, 'Future Simulator')} />
-          <Stack.Screen name="PortfolioHealth" component={premiumScreen(PortfolioHealthScreen, 'Portfolio Health Score')} />
-          <Stack.Screen name="Community" component={backOnly(CommunityScreen)} />
+          {/* Behind feature flags (src/config/features.ts). An off flag leaves
+              the screen, its store and its Firestore data untouched — the
+              route simply isn't registered, so nothing links to it and no URL
+              resolves to it. Flip LEGACY_FEATURES to bring them all back. */}
+          {FEATURES.behavioralQuiz && <Stack.Screen name="BehavioralAssessment" component={BehavioralAssessmentRoute} />}
+          {FEATURES.playbooks && <Stack.Screen name="Playbooks" component={PlaybooksRoute} />}
+          {FEATURES.playbooks && <Stack.Screen name="PlaybookDetail" component={PlaybookDetailRoute} />}
+          {FEATURES.marketCycle && <Stack.Screen name="MacroDashboard" component={MacroDashboardRoute} />}
+          {FEATURES.aiTutor && <Stack.Screen name="TutorChat" component={TutorChatRoute} />}
+          {FEATURES.investorDNA && <Stack.Screen name="InvestorDNA" component={InvestorDNARoute} />}
+          {FEATURES.timeMachine && <Stack.Screen name="TimeMachine" component={premiumScreen(TimeMachineScreen, 'Time Machine')} />}
+          {FEATURES.futureSimulator && <Stack.Screen name="FutureSimulator" component={premiumScreen(FutureSimulatorScreen, 'Future Simulator')} />}
+          {FEATURES.healthScore && <Stack.Screen name="PortfolioHealth" component={premiumScreen(PortfolioHealthScreen, 'Portfolio Health Score')} />}
+          {FEATURES.forum && <Stack.Screen name="Community" component={backOnly(CommunityScreen)} />}
+          {FEATURES.exploreTab && <Stack.Screen name="Discover" component={DiscoverRoute} />}
+          {FEATURES.connectTab && <Stack.Screen name="Social" component={SocialRoute} />}
         </Stack.Group>
       )}
     </Stack.Navigator>

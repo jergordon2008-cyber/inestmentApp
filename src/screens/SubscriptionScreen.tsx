@@ -59,7 +59,7 @@ export function SubscriptionScreen({ onBack, lockedFeature, onSubscribed }: Prop
           colors={[theme.colors.gold + '20', 'transparent']}
           style={s.heroCard}
         >
-          <Text style={{ fontSize: 40, marginBottom: 12 }}>👑</Text>
+          <Ionicons name="diamond" size={40} color={theme.colors.gold} style={{ marginBottom: 12 }} />
           <Text style={[s.heroTitle, { color: theme.colors.textPrimary }]}>InvestIQ Premium</Text>
           {lockedFeatureInfo ? (
             <Text style={[s.heroSub, { color: theme.colors.textSecondary }]}>
@@ -82,7 +82,7 @@ export function SubscriptionScreen({ onBack, lockedFeature, onSubscribed }: Prop
             const f = PREMIUM_FEATURES[key];
             return (
               <View key={key} style={[s.featureRow, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                <Text style={{ fontSize: 20 }}>{f.icon}</Text>
+                <Ionicons name={f.icon as any} size={20} color={theme.colors.primary} />
                 <View style={{ flex: 1 }}>
                   <Text style={[s.featureName, { color: theme.colors.textPrimary }]}>{f.name}</Text>
                   <Text style={[s.featureDesc, { color: theme.colors.textTertiary }]}>{f.description}</Text>

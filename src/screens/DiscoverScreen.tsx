@@ -6,6 +6,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { FEATURES } from '../config/features';
 import { useUserStore } from '../services/userStore';
 import { useBehavioralStore } from '../services/behavioralStore';
 import { useSubscriptionStore } from '../services/subscriptionStore';
@@ -170,7 +171,10 @@ export function DiscoverScreen({
           </View>
         </FadeSlide>
 
-        {/* Insight tip */}
+        {/* Insight of the Day — flagged off in Phase 3. This whole screen is
+            unregistered while exploreTab is off; the separate flag keeps the
+            insight hidden if Explore is ever turned back on. */}
+        {FEATURES.insightOfTheDay && (
         <FadeSlide delay={360}>
           <View style={[s.tip, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
             <View style={[s.tipIconBox, { backgroundColor: theme.colors.primary + '18' }]}>
@@ -186,6 +190,7 @@ export function DiscoverScreen({
             </View>
           </View>
         </FadeSlide>
+        )}
 
         <View style={{ height: 32 }} />
       </ScrollView>

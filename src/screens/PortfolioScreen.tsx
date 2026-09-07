@@ -16,6 +16,10 @@ import { Position } from '../types';
 
 interface Props {
   onBack: () => void; onStockPress: (sym: string) => void; onBrowsePress: () => void;
+  // The two journals live under the Portfolio tab — they're about the trades
+  // shown here, and this screen is their entry point.
+  onTradeJournalPress?: () => void;
+  onDecisionJournalPress?: () => void;
   // When embedded inside another screen (e.g. MarketScreen's "Your Portfolio"
   // sub-tab) we skip our own SafeAreaView/title bar since the host already
   // provides one — avoids doubled headers and backgrounds.
@@ -34,7 +38,7 @@ function SlideUp({ children, delay = 0 }: { children: React.ReactNode; delay?: n
   return <Animated.View style={{ opacity, transform: [{ translateY: y }] }}>{children}</Animated.View>;
 }
 
-export function PortfolioScreen({ onBack, onStockPress, onBrowsePress, embedded }: Props) {
+export function PortfolioScreen({ onBack, onStockPress, onBrowsePress, embedded, onTradeJournalPress, onDecisionJournalPress }: Props) {
   const { theme }              = useTheme();
   const Wrapper: any = embedded ? View : SafeAreaView;
   const portfolio              = usePortfolioStore(s => s.portfolio);
@@ -66,7 +70,7 @@ export function PortfolioScreen({ onBack, onStockPress, onBrowsePress, embedded 
         </TouchableOpacity>
       </View>
       <View style={s.empty}>
-        <Text style={{ fontSize: 52, marginBottom: 16 }}>📊</Text>
+        <Ionicons name="pie-chart-outline" size={52} color={theme.colors.textTertiary} style={{ marginBottom: 16 }} />
         <Text style={[s.emptyTitle, { color: theme.colors.textPrimary }]}>No portfolio yet</Text>
         <Text style={[s.emptyBody, { color: theme.colors.textSecondary }]}>
           Complete onboarding to start with $100,000 paper money.
@@ -183,7 +187,7 @@ export function PortfolioScreen({ onBack, onStockPress, onBrowsePress, embedded 
 
           {portfolio.positions.length === 0 ? (
             <View style={[s.emptyCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-              <Text style={{ fontSize: 36, marginBottom: 10 }}>🌱</Text>
+              <Ionicons name="leaf-outline" size={36} color={theme.colors.primary} style={{ marginBottom: 10 }} />
               <Text style={[{ fontSize: 16, fontWeight: '700', marginBottom: 6 }, { color: theme.colors.textPrimary }]}>
                 No positions yet
               </Text>
@@ -208,6 +212,37 @@ export function PortfolioScreen({ onBack, onStockPress, onBrowsePress, embedded 
             </View>
           )}
         </SlideUp>
+
+        {/* ── Journals ── */}
+        {(onTradeJournalPress || onDecisionJournalPress) && (
+          <SlideUp delay={180}>
+            <View style={s.sectionRow}>
+              <Text style={[s.sectionTitle, { color: theme.colors.textPrimary }]}>Journals</Text>
+            </View>
+            <View style={[s.journalCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+              {onDecisionJournalPress && (
+                <JournalRow
+                  icon="journal-outline"
+                  label="Decision Journal"
+                  meta="Why you traded"
+                  onPress={onDecisionJournalPress}
+                  theme={theme}
+                  isLast={!onTradeJournalPress}
+                />
+              )}
+              {onTradeJournalPress && (
+                <JournalRow
+                  icon="checkmark-done-outline"
+                  label="Trade Journal"
+                  meta="How it played out"
+                  onPress={onTradeJournalPress}
+                  theme={theme}
+                  isLast
+                />
+              )}
+            </View>
+          </SlideUp>
+        )}
 
         {/* ── Animated Pie Chart ── */}
         {portfolio.positions.length > 0 && (
@@ -278,6 +313,28 @@ function PositionCard({ pos, index, theme, onPress }: { pos: Position; index: nu
   );
 }
 
+function JournalRow({ icon, label, meta, onPress, theme, isLast }: {
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  label: string; meta: string; onPress: () => void; theme: any; isLast?: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
+      style={[s.journalRow, !isLast && { borderBottomWidth: 1, borderBottomColor: theme.colors.border }]}
+    >
+      <View style={[s.journalIcon, { backgroundColor: theme.colors.primary + '18' }]}>
+        <Ionicons name={icon} size={17} color={theme.colors.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[s.journalLabel, { color: theme.colors.textPrimary }]}>{label}</Text>
+        <Text style={[s.journalMeta, { color: theme.colors.textTertiary }]}>{meta}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={14} color={theme.colors.textTertiary} />
+    </TouchableOpacity>
+  );
+}
+
 const s = StyleSheet.create({
   container:   { flex: 1 },
   topBar:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 16 },
@@ -336,5 +393,10 @@ const s = StyleSheet.create({
   emptyTitle:  { fontSize: 22, fontWeight: '800', marginBottom: 8 },
   emptyBody:   { fontSize: 14, textAlign: 'center', lineHeight: 21 },
   emptyCard:   { marginHorizontal: 16, borderRadius: 22, borderWidth: 1, padding: 28, alignItems: 'center' },
+  journalCard: { marginHorizontal: 16, borderRadius: 18, borderWidth: 1, overflow: 'hidden' },
+  journalRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
+  journalIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  journalLabel:{ fontSize: 15, fontWeight: '700' },
+  journalMeta: { fontSize: 12, marginTop: 1 },
   emptyBtn:    { marginTop: 16, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 14 },
 });

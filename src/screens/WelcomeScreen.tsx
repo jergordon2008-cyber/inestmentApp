@@ -158,13 +158,13 @@ export function WelcomeScreen({ onGetStarted, onSignIn }: Props) {
 
             <View style={s.features}>
               {[
-                { icon: '📚', text: 'Structured curriculum from beginner to advanced' },
-                { icon: '🤖', text: 'AI tutor that adapts to your level and biases' },
-                { icon: '📊', text: 'Real market data. Zero real money at risk.' },
+                { icon: 'library-outline',    text: 'Structured curriculum from beginner to advanced' },
+                { icon: 'flag-outline',       text: 'Paper trading challenges tied to every lesson' },
+                { icon: 'stats-chart-outline', text: 'Real market data. Zero real money at risk.' },
               ].map((f, i) => (
                 <View key={i} style={s.featureRow}>
                   <View style={[s.featureIconBox, { backgroundColor: theme.colors.primary + '18' }]}>
-                    <Text style={{ fontSize: 14 }}>{f.icon}</Text>
+                    <Ionicons name={f.icon as any} size={14} color={theme.colors.primary} />
                   </View>
                   <Text style={[s.featureText, { color: theme.colors.textSecondary }]}>{f.text}</Text>
                 </View>

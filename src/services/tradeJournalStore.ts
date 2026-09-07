@@ -201,16 +201,16 @@ export const preTradePrompts = {
 export const postTradePrompts = {
   thesisQuestion: 'Did your original thesis play out?',
   thesisOptions: [
-    { value: 'yes', label: 'Yes, exactly as I expected', emoji: '🎯' },
-    { value: 'partially', label: 'Partially — some things were right, some weren\'t', emoji: '🤔' },
-    { value: 'no', label: 'No, I was wrong', emoji: '😅' },
+    { value: 'yes', label: 'Yes, exactly as I expected', icon: 'checkmark-circle-outline' },
+    { value: 'partially', label: 'Partially — some things were right, some weren\'t', icon: 'help-circle-outline' },
+    { value: 'no', label: 'No, I was wrong', icon: 'close-circle-outline' },
   ],
   learningsQuestion: 'What did you learn from this trade?',
   learningsPlaceholder: 'I learned that... / Next time I\'ll...',
   wouldRepeatQuestion: 'Would you make this trade again?',
   wouldRepeatOptions: [
     { value: 'yes', label: 'Yes, same approach', emoji: '✅' },
-    { value: 'with_changes', label: 'Yes, but I\'d do X differently', emoji: '🔄' },
+    { value: 'with_changes', label: 'Yes, but I\'d do X differently', icon: 'refresh-outline' },
     { value: 'no', label: 'No, I\'d skip it', emoji: '❌' },
   ],
 };

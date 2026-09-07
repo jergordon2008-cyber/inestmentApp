@@ -5,8 +5,8 @@
  * Philosophy: educated traders use news context to make decisions.
  *
  * Sub-tabs:
- *   📰 Market News  — breaking stories + "Trade This Story" CTAs
- *   📊 Portfolio    — your positions + quick access to trade
+ *   Market News  — breaking stories + "Trade This Story" CTAs
+ *   Portfolio    — your positions + quick access to trade
  */
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -31,6 +31,10 @@ interface Props {
   onStockPress:  (symbol: string) => void;
   onTradePress:  (symbol: string, action: 'buy' | 'sell') => void;
   onBrowsePress: () => void;
+  // Passed straight through to the embedded PortfolioScreen, which is where
+  // the journals are reached from.
+  onTradeJournalPress?:    () => void;
+  onDecisionJournalPress?: () => void;
 }
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -105,7 +109,7 @@ const tp = StyleSheet.create({
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function MarketScreen({ onStockPress, onTradePress, onBrowsePress }: Props) {
+export function MarketScreen({ onStockPress, onTradePress, onBrowsePress, onTradeJournalPress, onDecisionJournalPress }: Props) {
   const { theme }  = useTheme();
   const user       = useUserStore(s => s.user);
   const portfolio  = usePortfolioStore(s => s.portfolio);
@@ -129,9 +133,11 @@ export function MarketScreen({ onStockPress, onTradePress, onBrowsePress }: Prop
       {/* ── Header ── */}
       <View style={s.header}>
         <View>
-          <Text style={[s.title, { color: theme.colors.textPrimary }]}>Market</Text>
+          {/* Titled for the tab it now backs — the Portfolio tab, since the
+              six-tab bar collapsed to three. */}
+          <Text style={[s.title, { color: theme.colors.textPrimary }]}>Portfolio</Text>
           <Text style={[s.subtitle, { color: theme.colors.textSecondary }]}>
-            News · Trade · Portfolio
+            News · Trade · Positions
           </Text>
         </View>
         {/* Live indicator */}
@@ -173,6 +179,8 @@ export function MarketScreen({ onStockPress, onTradePress, onBrowsePress }: Prop
             onBack={() => setActiveTab('news')}
             onStockPress={onStockPress}
             onBrowsePress={onBrowsePress}
+            onTradeJournalPress={onTradeJournalPress}
+            onDecisionJournalPress={onDecisionJournalPress}
           />
         </View>
       )}

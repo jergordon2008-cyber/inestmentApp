@@ -18,6 +18,8 @@ import {
 import * as Haptics from 'expo-haptics';
 import * as WebBrowser from 'expo-web-browser';
 import { Ionicons } from '@expo/vector-icons';
+
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 import { useTheme } from '../context/ThemeContext';
 import { useUserStore } from '../services/userStore';
 import { useStreakStore } from '../services/streakStore';
@@ -78,8 +80,9 @@ function ExampleBlock({ section, theme, index }: { section: LessonSection; theme
   return (
     <AnimatedBlock delay={index * 80}>
       <View style={[s.exampleCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.primary + '30', borderLeftColor: theme.colors.primary }]}>
-        <View style={s.exampleTag}>
-          <Text style={[s.exampleTagText, { color: theme.colors.primary }]}>📈 REAL EXAMPLE</Text>
+        <View style={[s.exampleTag, { flexDirection: 'row', alignItems: 'center', gap: 5 }]}>
+          <Ionicons name="trending-up" size={11} color={theme.colors.primary} />
+          <Text style={[s.exampleTagText, { color: theme.colors.primary }]}>REAL EXAMPLE</Text>
         </View>
         {section.title ? (
           <Text style={[s.exampleTitle, { color: theme.colors.textPrimary }]}>{section.title}</Text>
@@ -300,7 +303,8 @@ function InlineQuestion({
 
   const badgeBg   = isScenario ? theme.colors.info + '22' : theme.colors.gold + '20';
   const badgeText = isScenario ? theme.colors.info         : theme.colors.gold;
-  const badgeLabel = isScenario ? '🎯 SCENARIO' : '✦ QUICK CHECK';
+  const badgeLabel = isScenario ? 'SCENARIO' : 'QUICK CHECK';
+  const badgeIcon: IoniconName = isScenario ? 'locate-outline' : 'help-circle-outline';
   const cardBorder = isScenario ? theme.colors.info + '40' : theme.colors.borderStrong;
 
   return (
@@ -313,7 +317,8 @@ function InlineQuestion({
         revealed && { borderColor: wasCorrect ? theme.colors.success : theme.colors.danger },
       ]}>
         <View style={s.quizHeader}>
-          <View style={[s.quizBadge, { backgroundColor: badgeBg }]}>
+          <View style={[s.quizBadge, { backgroundColor: badgeBg, flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+            <Ionicons name={badgeIcon} size={11} color={badgeText} />
             <Text style={[s.quizBadgeText, { color: badgeText }]}>{badgeLabel}</Text>
           </View>
         </View>
@@ -356,7 +361,11 @@ function InlineQuestion({
               : { backgroundColor: '#7F1D1D28', borderColor: theme.colors.danger + '50' },
             { opacity: resultA, transform: [{ translateY: resultY }] },
           ]}>
-            <Text style={{ fontSize: 22 }}>{wasCorrect ? '🎉' : '💡'}</Text>
+            <Ionicons
+              name={wasCorrect ? 'checkmark-circle' : 'bulb-outline'}
+              size={22}
+              color={wasCorrect ? theme.colors.success : theme.colors.danger}
+            />
             <View style={{ flex: 1 }}>
               <Text style={[s.resultTitle, { color: wasCorrect ? theme.colors.success : theme.colors.danger }]}>
                 {wasCorrect ? 'Correct!' : 'Not quite'}
@@ -375,9 +384,12 @@ function InlineQuestion({
             backgroundColor: isScenario ? theme.colors.info + '12' : theme.colors.primaryGlow,
             borderColor: isScenario ? theme.colors.info + '30' : theme.colors.primary + '25',
           }]}>
-            <Text style={[s.explanationText, { color: theme.colors.textSecondary }]}>
-              💡 {question.explanation}
-            </Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Ionicons name="bulb-outline" size={15} color={theme.colors.textTertiary} style={{ marginTop: 1 }} />
+              <Text style={[s.explanationText, { color: theme.colors.textSecondary, flex: 1 }]}>
+                {question.explanation}
+              </Text>
+            </View>
           </Animated.View>
         ) : null}
       </Animated.View>
@@ -630,7 +642,7 @@ export function LessonScreen({ lesson, onBack, onLessonComplete }: Props) {
         {questions.length > 0 && !showFinalQuiz && (
           <AnimatedBlock delay={200}>
             <View style={[s.quizCTA, { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderStrong }]}>
-              <Text style={{ fontSize: 36, marginBottom: 12 }}>📝</Text>
+              <Ionicons name="create-outline" size={36} color={theme.colors.primary} style={{ marginBottom: 12 }} />
               <Text style={[s.quizCTATitle, { color: theme.colors.textPrimary }]}>Ready for the final quiz?</Text>
               <Text style={[s.quizCTASub, { color: theme.colors.textSecondary }]}>
                 {questions.length} questions · Pass {Math.round((lesson.quiz?.passingScore ?? 0.75) * 100)}% to complete the lesson
@@ -784,7 +796,10 @@ function FinalQuizQuestion({ question, index, answered, selected, onAnswer, them
         </View>
         {answered && question.explanation ? (
           <View style={[bs.explanation, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary + '25' }]}>
-            <Text style={[bs.explanationText, { color: theme.colors.textSecondary }]}>💡 {question.explanation}</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Ionicons name="bulb-outline" size={15} color={theme.colors.textTertiary} style={{ marginTop: 1 }} />
+              <Text style={[bs.explanationText, { color: theme.colors.textSecondary, flex: 1 }]}>{question.explanation}</Text>
+            </View>
           </View>
         ) : null}
       </Animated.View>

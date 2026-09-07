@@ -7,7 +7,9 @@
  */
 
 import { createNavigationContainerRef, StackActions } from '@react-navigation/native';
-import type { RootStackParamList } from './types';
+import type {
+  RootStackParamList, LearnStackParamList, PortfolioStackParamList, MeStackParamList,
+} from './types';
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
@@ -29,4 +31,20 @@ export function replace<Name extends keyof RootStackParamList>(
 
 export function goBack() {
   if (navigationRef.isReady() && navigationRef.canGoBack()) navigationRef.goBack();
+}
+
+/** Screens reachable inside each tab's stack. */
+type TabScreens = {
+  Learn:     keyof LearnStackParamList;
+  Portfolio: keyof PortfolioStackParamList;
+  Me:        keyof MeStackParamList;
+};
+
+/**
+ * Jump to a tab, optionally to a specific screen inside it. Nesting means a
+ * plain navigate() can't reach another tab's stack, and hand-writing the
+ * { screen, params: { screen } } shape at every call site is where typos live.
+ */
+export function goTab<T extends keyof TabScreens>(tab: T, screen?: TabScreens[T], params?: object) {
+  navigate('Tabs', { screen: tab, params: screen ? { screen, params } : undefined } as any);
 }

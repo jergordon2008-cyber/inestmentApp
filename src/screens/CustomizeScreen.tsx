@@ -37,12 +37,6 @@ const FONT_SIZES: { id: FontSize; label: string; size: number }[] = [
   { id: 'xlarge',  label: 'X-Large',  size: 20 },
 ];
 
-const CHART_STYLES = [
-  { id: 'line',  label: 'Line',   icon: '📈' },
-  { id: 'area',  label: 'Area',   icon: '🏔️' },
-  { id: 'candle',label: 'Candle', icon: '🕯️' },
-] as const;
-
 const DENSITIES = [
   { id: 'comfortable', label: 'Comfortable', icon: 'expand-outline' },
   { id: 'compact',     label: 'Compact',     icon: 'contract-outline' },
@@ -131,7 +125,11 @@ export function CustomizeScreen({ onBack }: Props) {
                   backgroundColor: mode === m ? theme.colors.primaryGlow : theme.colors.surfaceMuted,
                 }]}
               >
-                <Text style={sl.optEmoji}>{m === 'light' ? '☀️' : m === 'dark' ? '🌙' : '⚙️'}</Text>
+                <Ionicons
+                  name={m === 'light' ? 'sunny-outline' : m === 'dark' ? 'moon-outline' : 'settings-outline'}
+                  size={20}
+                  color={mode === m ? theme.colors.primary : theme.colors.textSecondary}
+                />
                 <Text style={[sl.optLabel, { color: mode === m ? theme.colors.primary : theme.colors.textSecondary }]}>
                   {m.charAt(0).toUpperCase() + m.slice(1)}
                 </Text>
@@ -178,25 +176,10 @@ export function CustomizeScreen({ onBack }: Props) {
           </View>
         </Card>
 
-        {/* ── Chart Style ── */}
-        <SectionLabel text="CHART STYLE" theme={theme} />
-        <Card theme={theme}>
-          <View style={sl.row3}>
-            {CHART_STYLES.map(c => (
-              <TouchableOpacity
-                key={c.id}
-                onPress={() => setChartStyle(c.id as ChartStyle)}
-                style={[sl.optBtn, {
-                  borderColor: chartStyle === c.id ? theme.colors.primary : theme.colors.border,
-                  backgroundColor: chartStyle === c.id ? theme.colors.primaryGlow : theme.colors.surfaceMuted,
-                }]}
-              >
-                <Text style={sl.optEmoji}>{c.icon}</Text>
-                <Text style={[sl.optLabel, { color: chartStyle === c.id ? theme.colors.primary : theme.colors.textSecondary }]}>{c.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </Card>
+        {/* Chart Style used to sit here. Nothing in the app renders a chart
+            that reads chartStyle, so the setting did nothing — hidden rather
+            than removed: ThemeContext still stores and persists the value, so
+            turning this section back on restores each student's saved choice. */}
 
         {/* ── Layout Density ── */}
         <SectionLabel text="LAYOUT DENSITY" theme={theme} />
@@ -262,7 +245,11 @@ export function CustomizeScreen({ onBack }: Props) {
               <View style={{ marginBottom: 16 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ fontSize: 20 }}>{XP_MILESTONES.find(m => m.level === level)?.icon ?? '🌱'}</Text>
+                    <Ionicons
+                      name={(XP_MILESTONES.find(m => m.level === level)?.icon ?? 'leaf-outline') as IoniconName}
+                      size={20}
+                      color={theme.colors.primary}
+                    />
                     <View>
                       <Text style={[sl.toggleLabel, { color: theme.colors.textPrimary }]}>Level {level} · {XP_MILESTONES.find(m => m.level === level)?.title ?? 'Starter'}</Text>
                       <Text style={[sl.toggleSub, { color: theme.colors.textTertiary }]}>{xp.toLocaleString()} XP earned</Text>
@@ -288,7 +275,11 @@ export function CustomizeScreen({ onBack }: Props) {
                     {i > 0 && <View style={[sl.divider, { backgroundColor: theme.colors.border }]} />}
                     <View style={[sl.toggleRow, { opacity: unlocked ? 1 : 0.45 }]}>
                       <View style={[sl.toggleIcon, { backgroundColor: unlocked ? theme.colors.primary + '20' : theme.colors.surfaceMuted }]}>
-                        <Text style={{ fontSize: 14 }}>{m.icon}</Text>
+                        <Ionicons
+                          name={m.icon as IoniconName}
+                          size={14}
+                          color={unlocked ? theme.colors.primary : theme.colors.textTertiary}
+                        />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={[sl.toggleLabel, { color: unlocked ? theme.colors.textPrimary : theme.colors.textTertiary }]}>

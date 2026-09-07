@@ -10,20 +10,21 @@ export interface XPMilestone {
   title: string;
   perkTitle: string;
   perkDescription: string;
+  /** Ionicons name — the app's icon set. Was an emoji until Phase 3. */
   icon: string;
 }
 
 export const XP_MILESTONES: XPMilestone[] = [
-  { level: 1,  xpRequired: 0,      title: 'Starter',         perkTitle: 'Paper Portfolio',      perkDescription: '$100,000 paper money to practice trading — no real risk.',            icon: '🌱' },
-  { level: 2,  xpRequired: 400,    title: 'Learner',         perkTitle: 'Streak Shield',         perkDescription: 'One free streak protection per week — miss a day without losing it.',  icon: '📚' },
-  { level: 3,  xpRequired: 900,    title: 'Apprentice',      perkTitle: 'Custom Profile Badge',  perkDescription: 'Unique badge shown on your profile and leaderboard card.',               icon: '🎯' },
-  { level: 4,  xpRequired: 1600,   title: 'Investor',        perkTitle: 'Extra Accent Colors',   perkDescription: 'Unlock 5 premium accent color options for the app.',                    icon: '💡' },
-  { level: 5,  xpRequired: 2500,   title: 'Analyst',         perkTitle: 'XP Multiplier ×1.25',  perkDescription: 'Earn 25% more XP from all lessons and challenges.',                     icon: '📊' },
-  { level: 6,  xpRequired: 3600,   title: 'Strategist',      perkTitle: 'Leaderboard Profile',   perkDescription: 'Your name and rank appear on the global leaderboard.',                  icon: '🏆' },
-  { level: 7,  xpRequired: 4900,   title: 'Portfolio Pro',   perkTitle: 'Dark Gold Theme',       perkDescription: 'Unlock the exclusive dark gold accent theme for the app.',              icon: '✨' },
-  { level: 8,  xpRequired: 6400,   title: 'Expert',          perkTitle: 'Tier 2 Fast-Track',     perkDescription: 'Unlock all Tier 2 lessons immediately on completion of Tier 1.',        icon: '🚀' },
-  { level: 9,  xpRequired: 8100,   title: 'Master',          perkTitle: 'Signal Priority',       perkDescription: 'Get buy/sell signals 24 hours before other users.',                     icon: '⚡' },
-  { level: 10, xpRequired: 10000,  title: 'Elite Investor',  perkTitle: 'Elite Badge + Theme',   perkDescription: 'Permanent Elite badge, exclusive neon-blue theme, and Hall of Fame entry.', icon: '👑' },
+  { level: 1,  xpRequired: 0,      title: 'Starter',         perkTitle: 'Paper Portfolio',      perkDescription: '$100,000 paper money to practice trading — no real risk.',            icon: 'leaf-outline' },
+  { level: 2,  xpRequired: 400,    title: 'Learner',         perkTitle: 'Streak Shield',         perkDescription: 'One free streak protection per week — miss a day without losing it.',  icon: 'library-outline' },
+  { level: 3,  xpRequired: 900,    title: 'Apprentice',      perkTitle: 'Custom Profile Badge',  perkDescription: 'Unique badge shown on your profile and leaderboard card.',               icon: 'ribbon-outline' },
+  { level: 4,  xpRequired: 1600,   title: 'Investor',        perkTitle: 'Extra Accent Colors',   perkDescription: 'Unlock 5 premium accent color options for the app.',                    icon: 'color-palette-outline' },
+  { level: 5,  xpRequired: 2500,   title: 'Analyst',         perkTitle: 'XP Multiplier ×1.25',  perkDescription: 'Earn 25% more XP from all lessons and challenges.',                     icon: 'flash-outline' },
+  { level: 6,  xpRequired: 3600,   title: 'Strategist',      perkTitle: 'Leaderboard Profile',   perkDescription: 'Your name and rank appear on the global leaderboard.',                  icon: 'trophy-outline' },
+  { level: 7,  xpRequired: 4900,   title: 'Portfolio Pro',   perkTitle: 'Dark Gold Theme',       perkDescription: 'Unlock the exclusive dark gold accent theme for the app.',              icon: 'sparkles-outline' },
+  { level: 8,  xpRequired: 6400,   title: 'Expert',          perkTitle: 'Tier 2 Fast-Track',     perkDescription: 'Unlock all Tier 2 lessons immediately on completion of Tier 1.',        icon: 'rocket-outline' },
+  { level: 9,  xpRequired: 8100,   title: 'Master',          perkTitle: 'Signal Priority',       perkDescription: 'Get buy/sell signals 24 hours before other users.',                     icon: 'notifications-outline' },
+  { level: 10, xpRequired: 10000,  title: 'Elite Investor',  perkTitle: 'Elite Badge + Theme',   perkDescription: 'Permanent Elite badge, exclusive neon-blue theme, and Hall of Fame entry.', icon: 'diamond-outline' },
 ];
 
 export function getXPMilestoneForLevel(level: number): XPMilestone {

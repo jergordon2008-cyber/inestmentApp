@@ -20,7 +20,7 @@ import type { TradeType } from '../types';
 // ── Learn tab ────────────────────────────────────────────────────────────────
 export type LearnStackParamList = {
   LearnHome:    undefined;  // path: /learn          (HomeScreen — next lesson, streak, quick actions)
-  LessonsList:  undefined;  // path: /learn/lessons
+  LessonsList:  undefined;  // path: /learn/lessons  (the full curriculum)
   SkillTree:    undefined;  // path: /learn/skills
   MicroLesson:  undefined;  // path: /learn/quick
 };
@@ -42,27 +42,11 @@ export type MeStackParamList = {
   Analytics: undefined;                            // path: /me/admin/analytics
 };
 
-/**
- * The Phase 3 target: three tabs, each owning a stack. Not wired yet — step 2
- * swaps the navigation library while keeping today's six tabs, so that a
- * regression can only be the navigator and not the tab consolidation. Step 3
- * switches the tab navigator to this list and moves the routes marked
- * "moves to a tab stack in step 3" below into LearnStack/PortfolioStack/MeStack.
- */
+/** Three tabs, each owning a stack. */
 export type TabParamList = {
   Learn:     NavigatorScreenParams<LearnStackParamList>;
   Portfolio: NavigatorScreenParams<PortfolioStackParamList>;
   Me:        NavigatorScreenParams<MeStackParamList>;
-};
-
-/** Today's six tabs, carried unchanged through step 2. Deleted in step 3. */
-export type TransitionalTabParamList = {
-  Home:      undefined;  // path: /home       HomeScreen
-  Learn:     undefined;  // path: /learn      LessonsListScreen
-  Market:    undefined;  // path: /portfolio  MarketScreen
-  Social:    undefined;  // path: /connect    SocialScreen
-  Discover:  undefined;  // path: /explore    DiscoverScreen
-  Me:        undefined;  // path: /me         ProfileScreen
 };
 
 // ── Root ─────────────────────────────────────────────────────────────────────
@@ -73,7 +57,7 @@ export type RootStackParamList = {
   Signup:     undefined;  // path: /signup
   Onboarding: undefined;  // path: /onboarding
 
-  Tabs: NavigatorScreenParams<TransitionalTabParamList>;
+  Tabs: NavigatorScreenParams<TabParamList>;
 
   // Overlays reachable from more than one tab. These were the full-screen
   // modals in the old union; keeping them at root preserves that any screen
@@ -86,25 +70,10 @@ export type RootStackParamList = {
   Subscription:    { lockedFeature?: string };                // path: /premium
   Leaderboard:     undefined;                                 // path: /leaderboard  (entered from Classroom only)
 
-  // ── Tab-local screens, living at root until step 3 ──
-  // These belong to a single tab (see the stack lists above) but are root
-  // routes while the six-tab layout is still in place. They move to a tab
-  // stack in step 3; their paths do not change.
-  SkillTree:       undefined;  // path: /learn/skills
-  MicroLesson:     undefined;  // path: /learn/quick
-  TradeJournal:    undefined;  // path: /portfolio/journal
-  DecisionJournal: undefined;  // path: /portfolio/decisions
-  Classroom:       undefined;  // path: /me/classroom
-  Customize:       undefined;  // path: /me/appearance
-  Legal:           { kind: 'privacy' | 'terms' };  // path: /me/legal/:kind
-  Admin:           undefined;  // path: /me/admin
-  Analytics:       undefined;  // path: /me/admin/analytics
-
   // ── Flagged off in Phase 3 (see src/config/features.ts) ──
   // Registered only when the matching flag is on. Typed here so the flag-on
   // path still compiles and these screens can be brought back without
-  // reconstructing their params. The Explore and Connect tabs are not here:
-  // they are tab entries, and step 4 drops them from the tab list.
+  // reconstructing their params.
   Leagues:              undefined;                 // path: /leagues
   TutorChat:            undefined;                 // path: /tutor
   Playbooks:            undefined;                 // path: /playbooks
@@ -116,6 +85,11 @@ export type RootStackParamList = {
   FutureSimulator:      undefined;                 // path: /future
   PortfolioHealth:      undefined;                 // path: /health-score
   Community:            undefined;                 // path: /forum
+  // The old Explore and Connect tabs. They lost their place in the tab bar
+  // when six tabs became three; their screens are still routable by URL until
+  // the flags in step 4 unregister them.
+  Discover:             undefined;                 // path: /explore
+  Social:               undefined;                 // path: /connect
 };
 
 declare global {

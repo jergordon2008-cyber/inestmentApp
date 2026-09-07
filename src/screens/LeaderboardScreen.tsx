@@ -15,6 +15,7 @@ import {
   View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity,
   RefreshControl, ActivityIndicator,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useUserStore } from '../services/userStore';
 import { listLeaderboard, PublicStats } from '../services/firestoreSync';
@@ -84,7 +85,7 @@ export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
         >
           {entries.length === 0 && (
             <View style={styles.emptyFriends}>
-              <Text style={styles.emptyEmoji}>📊</Text>
+              <Ionicons name="podium-outline" size={48} color={theme.colors.textTertiary} style={{ marginBottom: 16 }} />
               <Text style={[styles.emptyTitle, { color: theme.colors.textPrimary }]}>No rankings yet</Text>
               <Text style={[styles.emptyDesc, { color: theme.colors.textSecondary }]}>
                 Once students start trading, real portfolio rankings will show up here.
@@ -117,7 +118,8 @@ function LeaderboardRow({ entry, rank, isCurrentUser, theme }: {
   entry: PublicStats; rank: number; isCurrentUser: boolean; theme: any;
 }) {
   const isPositive = entry.totalReturnPercent >= 0;
-  const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null;
+  // Top three get a medal in the app's icon set, tinted gold/silver/bronze.
+  const medalColor = rank === 1 ? '#FFD700' : rank === 2 ? '#C0C0C0' : rank === 3 ? '#CD7F32' : null;
 
   return (
     <View style={[
@@ -125,7 +127,7 @@ function LeaderboardRow({ entry, rank, isCurrentUser, theme }: {
       { backgroundColor: isCurrentUser ? theme.colors.primaryGlow : 'transparent', borderBottomColor: theme.colors.border },
     ]}>
       <View style={styles.rankCol}>
-        {medal ? <Text style={styles.medal}>{medal}</Text>
+        {medalColor ? <Ionicons name="medal" size={20} color={medalColor} />
           : <Text style={[styles.rankNum, { color: theme.colors.textTertiary }]}>{rank}</Text>}
       </View>
 

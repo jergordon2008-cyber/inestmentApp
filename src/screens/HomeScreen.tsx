@@ -29,6 +29,9 @@ interface Props {
   onPortfolioPress: () => void;
   onSignalPress: (id: string) => void;
   onMicroLessonPress?: () => void;
+  // Home is the Learn tab's landing, so it owns the way into the full
+  // curriculum — without this the lesson list has no entry point.
+  onAllLessonsPress?: () => void;
   onJournalPress?: () => void;
   onBrowseStocksPress?: () => void;
 }
@@ -60,7 +63,7 @@ function SlideUp({ children, delay = 0 }: { children: React.ReactNode; delay?: n
 
 export function HomeScreen({
   onLessonPress, onPortfolioPress, onBrowseStocksPress,
-  onJournalPress, onSignalPress, onMicroLessonPress,
+  onJournalPress, onSignalPress, onMicroLessonPress, onAllLessonsPress,
 }: Props) {
   const { theme } = useTheme();
   const user        = useUserStore(s => s.user);
@@ -103,7 +106,7 @@ export function HomeScreen({
               backgroundColor: theme.colors.gold + '18',
               borderColor: theme.colors.gold + '30',
             }]}>
-              <Text style={{ fontSize: fs(16) }}>🔥</Text>
+              <Ionicons name="flame" size={fs(16)} color={theme.colors.gold} />
               <View>
                 <Text style={[s.streakNum, { color: theme.colors.gold }]}>{streak}</Text>
                 <Text style={[s.streakLabel, { color: theme.colors.gold + '99' }]}>day streak</Text>
@@ -184,17 +187,26 @@ export function HomeScreen({
         </SlideUp>
 
         {/* ── Continue Learning ── */}
-        {nextLesson && (
-          <SlideUp delay={240}>
-            <View style={s.sectionHeader}>
-              <Text style={[s.sectionTitle, { color: theme.colors.textPrimary }]}>Continue Learning</Text>
+        {/* The header renders whether or not a next lesson exists: it carries
+            the only link to the full curriculum, so hiding it would strand a
+            student who has finished every lesson in their tier. */}
+        <SlideUp delay={240}>
+          <View style={s.sectionHeader}>
+            <Text style={[s.sectionTitle, { color: theme.colors.textPrimary }]}>Continue Learning</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: sp(10) }}>
               <View style={[s.tierPill, { backgroundColor: theme.colors.primary + '18', borderColor: theme.colors.primary + '35' }]}>
                 <Text style={[s.tierPillText, { color: theme.colors.primary }]}>
                   Tier {user?.currentTier ?? 1}
                 </Text>
               </View>
+              <TouchableOpacity onPress={onAllLessonsPress} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Text style={[s.seeAll, { color: theme.colors.primary }]}>All lessons →</Text>
+              </TouchableOpacity>
             </View>
-
+          </View>
+        </SlideUp>
+        {nextLesson && (
+          <SlideUp delay={260}>
             <AnimatedPressable onPress={() => onLessonPress(nextLesson.id)} scaleTarget={0.97}
               style={[s.lessonCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
               <LinearGradient
@@ -203,7 +215,7 @@ export function HomeScreen({
                 style={StyleSheet.absoluteFillObject}
               />
               <View style={[s.lessonIconBox, { backgroundColor: theme.colors.primary + '18' }]}>
-                <Text style={{ fontSize: fs(22) }}>📖</Text>
+                <Ionicons name="book" size={fs(22)} color={theme.colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[s.lessonTitle, { color: theme.colors.textPrimary }]} numberOfLines={2}>
@@ -249,12 +261,12 @@ export function HomeScreen({
         {/* ── Stats Grid ── */}
         <SlideUp delay={400}>
           <View style={s.statsGrid}>
-            {[
-              { label: 'Lessons',    val: String(user?.lessonsCompleted?.length ?? 0), icon: '📚', color: theme.colors.info },
-              { label: 'Day Streak', val: String(streak),                              icon: '🔥', color: theme.colors.gold },
-              { label: 'Positions',  val: String(portfolio?.positions?.length ?? 0),   icon: '📈', color: theme.colors.success },
-              { label: 'Tier',       val: `Tier ${user?.currentTier ?? 1}`,            icon: '⭐', color: theme.colors.primary },
-            ].map(stat => (
+            {([
+              { label: 'Lessons',    val: String(user?.lessonsCompleted?.length ?? 0), icon: 'book',        color: theme.colors.info },
+              { label: 'Day Streak', val: String(streak),                              icon: 'flame',       color: theme.colors.gold },
+              { label: 'Positions',  val: String(portfolio?.positions?.length ?? 0),   icon: 'trending-up', color: theme.colors.success },
+              { label: 'Tier',       val: `Tier ${user?.currentTier ?? 1}`,            icon: 'star',        color: theme.colors.primary },
+            ] as Array<{ label: string; val: string; icon: IoniconName; color: string }>).map(stat => (
               <StatCard key={stat.label} {...stat} theme={theme} />
             ))}
           </View>
@@ -358,11 +370,11 @@ function ProgressBar({ pct, color, trackColor }: { pct: number; color: string; t
   );
 }
 
-function StatCard({ label, val, icon, color, theme }: { label: string; val: string; icon: string; color: string; theme: any }) {
+function StatCard({ label, val, icon, color, theme }: { label: string; val: string; icon: IoniconName; color: string; theme: any }) {
   return (
     <View style={[s.statCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
       <View style={[s.statIconWrap, { backgroundColor: color + '14' }]}>
-        <Text style={{ fontSize: fs(18) }}>{icon}</Text>
+        <Ionicons name={icon} size={fs(18)} color={color} />
       </View>
       <Text style={[s.statVal, { color: theme.colors.textPrimary }]}>{val}</Text>
       <Text style={[s.statLabel, { color: theme.colors.textTertiary }]}>{label}</Text>

@@ -20,6 +20,7 @@ import {
   TouchableOpacity, Easing,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 
 const { width: SW, height: SH } = Dimensions.get('window');
@@ -235,9 +236,9 @@ export function LessonCompleteAnimation({
           {statsVisible && (
             <View style={cs.statsGrid}>
               {[
-                { label: 'Streak',      value: `${streakDays} day${streakDays !== 1 ? 's' : ''}`, icon: '🔥' },
-                { label: 'XP Earned',   value: `+${xpEarned}`,     icon: '⚡' },
-                { label: isFirstLesson ? 'First Lesson' : 'Keep going', value: isFirstLesson ? 'Unlocked!' : '→ Next',  icon: isFirstLesson ? '🏆' : '📖' },
+                { label: 'Streak',      value: `${streakDays} day${streakDays !== 1 ? 's' : ''}`, icon: 'flame' },
+                { label: 'XP Earned',   value: `+${xpEarned}`,     icon: 'flash' },
+                { label: isFirstLesson ? 'First Lesson' : 'Keep going', value: isFirstLesson ? 'Unlocked!' : '→ Next',  icon: isFirstLesson ? 'trophy' : 'book' },
               ].map((stat, i) => (
                 <StatPill key={stat.label} stat={stat} delay={i * 100} theme={theme} />
               ))}
@@ -275,7 +276,7 @@ function StatPill({ stat, delay, theme }: { stat: { label: string; value: string
       { backgroundColor: theme.colors.surfaceElevated, borderColor: theme.colors.border,
         opacity: anim, transform: [{ scale: anim }] },
     ]}>
-      <Text style={{ fontSize: 18 }}>{stat.icon}</Text>
+      <Ionicons name={stat.icon as any} size={18} color={theme.colors.primary} />
       <Text style={[cs.statValue, { color: theme.colors.textPrimary }]}>{stat.value}</Text>
       <Text style={[cs.statLabel, { color: theme.colors.textTertiary }]}>{stat.label}</Text>
     </Animated.View>

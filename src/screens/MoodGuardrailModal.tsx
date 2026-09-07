@@ -38,7 +38,7 @@ export function MoodGuardrailModal({ visible, symbol, onProceed, onCancel }: Pro
 
           {step === 'mood' && (
             <>
-              <Text style={[s.title, { color: theme.colors.textPrimary }]}>🎭 How are you feeling?</Text>
+              <Text style={[s.title, { color: theme.colors.textPrimary }]}>How are you feeling?</Text>
               <Text style={[s.sub, { color: theme.colors.textSecondary }]}>
                 Before trading {symbol}, a quick check-in. Emotional state affects trading decisions more than most people realize.
               </Text>

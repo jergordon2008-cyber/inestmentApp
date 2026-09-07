@@ -22,6 +22,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
@@ -128,9 +129,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
         {/* Illustration */}
         {currentQuestion.illustration && (
           <View style={styles.illustration}>
-            <Text style={styles.illustrationEmoji}>
-              {currentQuestion.illustration}
-            </Text>
+            <Ionicons name={currentQuestion.illustration as any} size={64} color={theme.colors.primary} />
           </View>
         )}
         

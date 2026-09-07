@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { usePortfolioStore } from '../services/portfolioStore';
 import { fetchStock, getDataSourceLabel } from '../services/marketDataFacade';
@@ -71,8 +72,9 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <Text style={[s.compName, { color: theme.colors.textPrimary }]}>{stock.name}</Text>
               {isBlueChip && (
-                <View style={{ backgroundColor: '#1D4ED820', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 }}>
-                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#60A5FA', letterSpacing: 0.5 }}>💎 BLUE CHIP</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#1D4ED820', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 }}>
+                  <Ionicons name="diamond" size={10} color="#60A5FA" />
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: '#60A5FA', letterSpacing: 0.5 }}>BLUE CHIP</Text>
                 </View>
               )}
             </View>

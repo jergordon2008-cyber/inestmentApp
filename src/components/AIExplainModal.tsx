@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useUserStore } from '../services/userStore';
 import { explainTerm, ExplanationResult } from '../services/aiExplainService';
@@ -139,7 +140,7 @@ export function AIExplainModal({ term, onClose }: AIExplainModalProps) {
                         { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
                       ]}
                     >
-                      <Text style={styles.feedbackEmoji}>👍</Text>
+                      <Ionicons name="thumbs-up-outline" size={18} color={theme.colors.textSecondary} />
                       <Text style={[styles.feedbackText, { color: theme.colors.textPrimary }]}>
                         Yes
                       </Text>
@@ -150,7 +151,7 @@ export function AIExplainModal({ term, onClose }: AIExplainModalProps) {
                         { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
                       ]}
                     >
-                      <Text style={styles.feedbackEmoji}>🤔</Text>
+                      <Ionicons name="help-circle-outline" size={18} color={theme.colors.textSecondary} />
                       <Text style={[styles.feedbackText, { color: theme.colors.textPrimary }]}>
                         Confusing
                       </Text>

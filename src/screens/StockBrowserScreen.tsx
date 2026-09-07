@@ -173,7 +173,7 @@ export function StockBrowserScreen({ onStockPress, onBack }: StockBrowserScreenP
           styles.searchBox,
           { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
         ]}>
-          <Text style={[styles.searchIcon, { color: theme.colors.textTertiary }]}>🔍</Text>
+          <Ionicons name="search-outline" size={16} color={theme.colors.textTertiary} style={{ marginRight: 8 }} />
           <TextInput
             value={query}
             onChangeText={setQuery}
@@ -270,7 +270,8 @@ function StockListItem({ stock, onPress, theme }: {
               </Text>
               {isBlueChip && (
                 <View style={[styles.blueChipBadge, { backgroundColor: '#1D4ED820' }]}>
-                  <Text style={styles.blueChipText}>💎 BLUE CHIP</Text>
+                  <Ionicons name="diamond" size={9} color="#60A5FA" />
+                  <Text style={styles.blueChipText}>BLUE CHIP</Text>
                 </View>
               )}
             </View>
@@ -450,7 +451,7 @@ const styles = StyleSheet.create({
   stockLeft: { flex: 1, marginRight: 12 },
   symbolRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 },
   stockSymbol: { fontSize: 16, fontWeight: '700' },
-  blueChipBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  blueChipBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   blueChipText: { fontSize: 9, fontWeight: '800', color: '#60A5FA', letterSpacing: 0.5 },
   stockName: { fontSize: 13, marginBottom: 6 },
   sectorTag: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },

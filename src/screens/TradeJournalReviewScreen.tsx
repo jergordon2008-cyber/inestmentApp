@@ -27,6 +27,7 @@ import {
   TextInput,
 } from 'react-native';
 import { showAlert } from '../utils/alert';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
@@ -71,7 +72,7 @@ export function TradeJournalReviewScreen({
         {/* Empty state */}
         {entries.length === 0 && (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyEmoji}>📓</Text>
+            <Ionicons name="journal-outline" size={48} color={theme.colors.textTertiary} style={{ marginBottom: 16 }} />
             <Text style={[styles.emptyTitle, { color: theme.colors.textPrimary }]}>
               Your journal is empty
             </Text>
@@ -120,7 +121,7 @@ export function TradeJournalReviewScreen({
             {stats.bestLearning && (
               <View style={[styles.learningBox, { backgroundColor: theme.colors.primaryGlow }]}>
                 <Text style={[styles.learningLabel, { color: theme.colors.primary }]}>
-                  💡 BIGGEST LESSON SO FAR
+                  BIGGEST LESSON SO FAR
                 </Text>
                 <Text style={[styles.learningText, { color: theme.colors.textPrimary }]}>
                   "{stats.bestLearning}"

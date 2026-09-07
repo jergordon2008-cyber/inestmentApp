@@ -23,6 +23,7 @@ interface Props {
   onSignOut: () => void;
   onRestartOnboarding: () => void;
   onJournalPress?: () => void;
+  onClassroomPress?: () => void;
   onCustomizePress?: () => void;
   onPrivacyPress: () => void;
   onTermsPress: () => void;
@@ -43,7 +44,7 @@ function FadeSlide({ children, delay = 0 }: { children: React.ReactNode; delay?:
 }
 
 export function ProfileScreen({
-  onSignOut, onRestartOnboarding, onJournalPress, onPrivacyPress, onTermsPress,
+  onSignOut, onRestartOnboarding, onJournalPress, onClassroomPress, onPrivacyPress, onTermsPress,
   onBehavioralAssessmentPress, onPlaybooksPress, onMacroDashboardPress,
   onCommunityPress, onTutorChatPress, onCustomizePress,
   onAdminPress, isAdmin,
@@ -129,6 +130,9 @@ export function ProfileScreen({
           <SectionGroup title="Activity" theme={theme}>
             {onJournalPress && (
               <SettingRow icon="journal-outline" label="Trade Journal" meta="Review your trades" onPress={onJournalPress} theme={theme} />
+            )}
+            {onClassroomPress && (
+              <SettingRow icon="school-outline" label="Classroom" meta="Your class · rankings" onPress={onClassroomPress} theme={theme} />
             )}
             {onCommunityPress && (
               <SettingRow icon="people-outline" label="Community" meta="Challenges · Forum" onPress={onCommunityPress} theme={theme} />

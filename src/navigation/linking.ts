@@ -12,6 +12,7 @@
 
 import * as Linking from 'expo-linking';
 import type { LinkingOptions } from '@react-navigation/native';
+import { FEATURES } from '../config/features';
 import type { RootStackParamList } from './types';
 
 export const linking: LinkingOptions<RootStackParamList> = {
@@ -24,15 +25,46 @@ export const linking: LinkingOptions<RootStackParamList> = {
       Signup:     'signup',
       Onboarding: 'onboarding',
 
-      // Tabs
+      // Tabs — each owns a stack, so a tab's screens nest under its path.
       Tabs: {
         screens: {
-          Home:     'home',
-          Learn:    'learn',
-          Market:   'portfolio',
-          Social:   'connect',
-          Discover: 'explore',
-          Me:       'me',
+          Learn: {
+            path: 'learn',
+            // initialRouteName puts the tab's home under a deep-linked screen,
+            // so Back from a pasted /learn/skills link lands on /learn rather
+            // than falling out of the tab entirely. The `as never` casts work
+            // around React Navigation's linking types not threading the nested
+            // param list through to this field; the route names are still
+            // checked by the `screens` map directly below.
+            initialRouteName: 'LearnHome' as never,
+            screens: {
+              LearnHome:   '',
+              LessonsList: 'lessons',
+              SkillTree:   'skills',
+              MicroLesson: 'quick',
+            },
+          },
+          Portfolio: {
+            path: 'portfolio',
+            initialRouteName: 'PortfolioHome' as never,
+            screens: {
+              PortfolioHome:   '',
+              TradeJournal:    'journal',
+              DecisionJournal: 'decisions',
+            },
+          },
+          Me: {
+            path: 'me',
+            initialRouteName: 'MeHome' as never,
+            screens: {
+              MeHome:    '',
+              Classroom: 'classroom',
+              Customize: 'appearance',
+              Legal:     'legal/:kind',
+              Admin:     'admin',
+              Analytics: 'admin/analytics',
+            },
+          },
         },
       },
 
@@ -45,30 +77,21 @@ export const linking: LinkingOptions<RootStackParamList> = {
       Subscription:    'premium',
       Leaderboard:     'leaderboard',
 
-      // Tab-local screens (move into a tab stack in step 3; paths unchanged)
-      SkillTree:       'learn/skills',
-      MicroLesson:     'learn/quick',
-      TradeJournal:    'portfolio/journal',
-      DecisionJournal: 'portfolio/decisions',
-      Classroom:       'me/classroom',
-      Customize:       'me/appearance',
-      Legal:           'me/legal/:kind',
-      Admin:           'me/admin',
-      Analytics:       'me/admin/analytics',
-
-      // Flagged off in step 4 — routes are only registered when the matching
-      // feature flag is on, in which case these paths become reachable again.
-      Leagues:              'leagues',
-      TutorChat:            'tutor',
-      Playbooks:            'playbooks',
-      PlaybookDetail:       'playbooks/:playbookId',
-      MacroDashboard:       'market-cycle',
-      BehavioralAssessment: 'mind-check',
-      InvestorDNA:          'investor-dna',
-      TimeMachine:          'time-machine',
-      FutureSimulator:      'future',
-      PortfolioHealth:      'health-score',
-      Community:            'forum',
+      // Feature-flagged screens. These entries are included only when the
+      // route is actually registered — a linking config that names a screen
+      // the navigator doesn't have makes React Navigation warn at startup.
+      ...(FEATURES.behavioralQuiz  ? { BehavioralAssessment: 'mind-check' } : {}),
+      ...(FEATURES.playbooks       ? { Playbooks: 'playbooks', PlaybookDetail: 'playbooks/:playbookId' } : {}),
+      ...(FEATURES.marketCycle     ? { MacroDashboard: 'market-cycle' } : {}),
+      ...(FEATURES.aiTutor         ? { TutorChat: 'tutor' } : {}),
+      ...(FEATURES.investorDNA     ? { InvestorDNA: 'investor-dna' } : {}),
+      ...(FEATURES.timeMachine     ? { TimeMachine: 'time-machine' } : {}),
+      ...(FEATURES.futureSimulator ? { FutureSimulator: 'future' } : {}),
+      ...(FEATURES.healthScore     ? { PortfolioHealth: 'health-score' } : {}),
+      ...(FEATURES.forum           ? { Community: 'forum' } : {}),
+      ...(FEATURES.exploreTab      ? { Discover: 'explore' } : {}),
+      ...(FEATURES.connectTab      ? { Social: 'connect' } : {}),
+      // Leagues has a screen file but has never been wired into navigation.
     },
   },
 };

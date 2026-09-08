@@ -289,7 +289,7 @@ function MarketNewsCard({ item, tier, expanded, onPress, onStockPress, onTradePr
             <Text style={[s.categoryText, { color: sentColor }]}>{categoryLabel}</Text>
           </View>
           {Array.from({ length: Math.min(5, item.importance) }).map((_, i) => (
-            <Text key={i} style={{ fontSize: 8, color: sentColor }}>●</Text>
+            <Ionicons key={i} name="ellipse" size={5} color={sentColor} />
           ))}
           <View style={{ flex: 1 }} />
           <Text style={[s.timeAgo, { color: theme.colors.textTertiary }]}>{item.publishedAt}</Text>

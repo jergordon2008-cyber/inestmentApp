@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useMoodStore, MOOD_CONFIG, Mood } from '../services/moodStore';
 
@@ -74,8 +75,9 @@ export function MoodGuardrailModal({ visible, symbol, onProceed, onCancel }: Pro
 
               <View style={s.btnRow}>
                 <TouchableOpacity onPress={() => { reset(); onCancel(); }}
-                  style={[s.waitBtn, { borderColor: theme.colors.border }]}>
-                  <Text style={[s.waitBtnText, { color: theme.colors.textSecondary }]}>⏸ Wait & Cool Down</Text>
+                  style={[s.waitBtn, s.waitBtnRow, { borderColor: theme.colors.border }]}>
+                  <Ionicons name="pause" size={14} color={theme.colors.textSecondary} />
+                  <Text style={[s.waitBtnText, { color: theme.colors.textSecondary }]}>Wait & Cool Down</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => { reset(); onProceed(); }}
                   style={[s.proceedBtn, { backgroundColor: cfg.color }]}>
@@ -106,6 +108,7 @@ const styles = (theme: any) => StyleSheet.create({
   moodStats: { fontSize: 12, textAlign: 'center', lineHeight: 18, marginBottom: 20 },
   btnRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   waitBtn: { flex: 1, borderWidth: 1.5, borderRadius: 12, padding: 14, alignItems: 'center' },
+  waitBtnRow: { flexDirection: 'row', justifyContent: 'center', gap: 5 },
   waitBtnText: { fontSize: 13, fontWeight: '600' },
   proceedBtn: { flex: 1, borderRadius: 12, padding: 14, alignItems: 'center' },
   proceedBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },

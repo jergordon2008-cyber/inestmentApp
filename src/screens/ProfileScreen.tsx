@@ -7,6 +7,7 @@ import { showAlert } from '../utils/alert';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { changeColor, changeSign } from '../utils/change';
 import { useUserStore } from '../services/userStore';
 import { usePortfolioStore } from '../services/portfolioStore';
 import { useStreakStore } from '../services/streakStore';
@@ -62,7 +63,7 @@ export function ProfileScreen({
 
   const tierLabel = ['', 'Foundation', 'Active', 'Advanced'][user.currentTier] ?? 'Foundation';
   const initial   = user.displayName.charAt(0).toUpperCase();
-  const isUp      = (portfolio?.totalReturn ?? 0) >= 0;
+  const returnTint = changeColor(portfolio?.totalReturn, theme);
 
   const handleSignOut = () => showAlert(
     'Sign out?',
@@ -107,8 +108,8 @@ export function ProfileScreen({
             </View>
             <View style={[s.statDivider, { backgroundColor: theme.colors.border }]} />
             <View style={s.statItem}>
-              <Text style={[s.statVal, { color: isUp ? theme.colors.success : theme.colors.danger }]}>
-                {isUp ? '+' : ''}{(portfolio?.totalReturnPercent ?? 0).toFixed(1)}%
+              <Text style={[s.statVal, { color: returnTint }]}>
+                {changeSign(portfolio?.totalReturn)}{(portfolio?.totalReturnPercent ?? 0).toFixed(1)}%
               </Text>
               <Text style={[s.statLabel, { color: theme.colors.textTertiary }]}>Return</Text>
             </View>

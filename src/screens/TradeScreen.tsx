@@ -14,6 +14,7 @@ import { TradeType, Trade } from '../types';
 import { BehaviorCoachModal, BehaviorBias } from '../components/BehaviorCoachModal';
 import { Ionicons } from '@expo/vector-icons';
 import { logEvent } from '../services/analyticsService';
+import { changeCaret, changeColor, changeTone } from '../utils/change';
 
 interface Props {
   symbol: string;
@@ -112,8 +113,10 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
 
   if (!stock || !user || !portfolio) return null;
 
-  const isUp = (stock.changePercent ?? 0) >= 0;
-  const color = isUp ? theme.colors.primary : theme.colors.danger;
+  const changeTint = changeTone(stock.changePercent) === 'up'
+    ? theme.colors.primary
+    : changeColor(stock.changePercent, theme);
+  const priceCaret = changeCaret(stock.changePercent);
 
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.colors.background }]}>
@@ -136,9 +139,13 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
           <CompanyLogo symbol={symbol} size={28} />
           <View>
             <Text style={[s.symbolText, { color: theme.colors.textPrimary }]}>{symbol}</Text>
-            <Text style={[s.priceText, { color: theme.colors.textSecondary }]}>
-              ${price.toFixed(2)} <Text style={{ color }}>{isUp ? '▲' : '▼'} {Math.abs(stock.changePercent ?? 0).toFixed(2)}%</Text>
-            </Text>
+            <View style={s.priceRow}>
+              <Text style={[s.priceText, { color: theme.colors.textSecondary }]}>${price.toFixed(2)}</Text>
+              {priceCaret && <Ionicons name={priceCaret} size={11} color={changeTint} />}
+              <Text style={[s.priceText, { color: changeTint }]}>
+                {Math.abs(stock.changePercent ?? 0).toFixed(2)}%
+              </Text>
+            </View>
           </View>
         </View>
         <View style={{ width: 32 }} />
@@ -183,14 +190,16 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
 
         {/* Numeric keypad */}
         <View style={s.keypad}>
-          {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k => (
+          {['1','2','3','4','5','6','7','8','9','.','0','backspace'].map(k => (
             <TouchableOpacity key={k} onPress={() => {
               Haptics.selectionAsync();
-              if (k === '⌫') setInputVal(v => v.slice(0, -1));
+              if (k === 'backspace') setInputVal(v => v.slice(0, -1));
               else if (k === '.' && inputVal.includes('.')) return;
               else setInputVal(v => (v + k).replace(/^0+(?=\d)/, ''));
             }} style={s.key}>
-              <Text style={[s.keyText, { color: theme.colors.textPrimary }]}>{k}</Text>
+              {k === 'backspace'
+                ? <Ionicons name="backspace-outline" size={20} color={theme.colors.textPrimary} />
+                : <Text style={[s.keyText, { color: theme.colors.textPrimary }]}>{k}</Text>}
             </TouchableOpacity>
           ))}
         </View>
@@ -258,6 +267,7 @@ const styles = (theme: any) => StyleSheet.create({
   stockHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   symbolText: { fontSize: 16, fontWeight: '800' },
   priceText: { fontSize: 12, fontWeight: '600' },
+  priceRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
 
   scroll: { paddingHorizontal: 20 },
   toggleRow: { flexDirection: 'row', borderRadius: 14, padding: 4, marginTop: 8, marginBottom: 20 },

@@ -1,15 +1,20 @@
 /**
- * TabBar — Reanimated sliding pill indicator
+ * TabBar
  *
- * A pill highlight smoothly slides between tabs using spring physics.
- * Active tab: filled icon + indigo label + pill background
+ * Active tab: filled icon + label, both tinted with the accent colour the
+ * student picked in Customize (theme.colors.primary is that accent).
  * Inactive:   outline icon + muted label
  * Centre tab (Portfolio): raised capsule button — always highlighted
+ *
+ * There used to be a sliding highlight pill behind the active tab. Its width
+ * was a rounded fraction of the measured bar, so it sat short of the tab it
+ * belonged to and overhung the neighbouring one. Tinting the icon and label
+ * marks the active tab without geometry that can drift.
  */
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
-  View, Text, Pressable, StyleSheet, Platform, Dimensions,
+  View, Text, Pressable, StyleSheet, Platform,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -40,40 +45,14 @@ const TABS: Array<{
   { name: 'me',        label: 'Me',        icon: 'person-outline',      iconFilled: 'person'       },
 ];
 
-const PILL_H  = sp(32);
-const ICON_W  = sp(44); // icon hit-area, independent of pill width
+const ICON_H  = sp(32);
+const ICON_W  = sp(44);
 
 export function TabBar({ current, onTabPress }: TabBarProps) {
   const { theme } = useTheme();
-  const currentIndex = TABS.findIndex(t => t.name === current);
-
-  // Measure the real bar width — Dimensions at module load is wrong on iPad
-  // multitasking windows and after rotation, which made the pill sit off-target.
-  const [barW, setBarW] = React.useState(Dimensions.get('window').width);
-  const tabW  = barW / TABS.length;
-  const pillW = Math.floor(tabW);
-
-  // Sliding pill — always animate, hide via regular opacity (not inside worklet)
-  const pillX    = useSharedValue(currentIndex * tabW);
-  const isSpecial = TABS[currentIndex]?.special ?? false;
-
-  useEffect(() => {
-    // Always animate to new position; opacity handled outside worklet
-    pillX.value = withSpring(currentIndex * tabW, {
-      damping: 20,
-      stiffness: 280,
-      mass: 0.8,
-    });
-  }, [currentIndex, tabW]);
-
-  // Only transform in the worklet — opacity goes on the View as a plain style
-  const pillStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: pillX.value }],
-  }));
 
   return (
     <View
-      onLayout={e => setBarW(e.nativeEvent.layout.width)}
       style={[s.bar, {
         backgroundColor: theme.mode === 'dark' ? 'rgba(19,19,26,0.72)' : 'rgba(255,255,255,0.72)',
         borderTopColor: theme.colors.glassBorder,
@@ -86,23 +65,8 @@ export function TabBar({ current, onTabPress }: TabBarProps) {
         tint={theme.mode === 'dark' ? 'dark' : 'light'}
         style={StyleSheet.absoluteFillObject}
       />
-      {/* Sliding background pill — opacity: 0 when on special (raised) tab */}
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          s.pill,
-          {
-            backgroundColor: theme.colors.primaryGlow,
-            width: pillW,
-            height: PILL_H,
-            opacity: isSpecial ? 0 : 1,   // plain style, not worklet
-          },
-          pillStyle,
-        ]}
-      />
-
       {/* Tab items */}
-      {TABS.map((tab, i) => (
+      {TABS.map(tab => (
         <TabItem
           key={tab.name}
           tab={tab}
@@ -193,12 +157,6 @@ const s = StyleSheet.create({
     shadowRadius: 16,
     elevation: 12,
   },
-  pill: {
-    position: 'absolute',
-    top: 6,
-    left: 0,
-    borderRadius: 14,
-  },
   tab: {
     flex: 1,
     alignItems: 'center',
@@ -208,7 +166,7 @@ const s = StyleSheet.create({
   },
   iconArea: {
     width: ICON_W,
-    height: PILL_H,
+    height: ICON_H,
     alignItems: 'center',
     justifyContent: 'center',
   },

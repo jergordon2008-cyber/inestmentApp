@@ -17,6 +17,8 @@ import {
   Animated, Easing, Dimensions,
 } from 'react-native';
 import Svg, { G, Circle as SvgCircle } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
+import { changeCaret, changeColor } from '../utils/change';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -285,12 +287,18 @@ export function PortfolioPieChart({ positions, cash, totalValue, theme }: Props)
                   ${sl.value.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </Text>
                 {pos && (
-                  <Text style={[
-                    s.legendGain,
-                    { color: pos.unrealizedGain >= 0 ? theme.colors.success : theme.colors.danger, opacity: isDim ? 0.35 : 1 },
-                  ]}>
-                    {pos.unrealizedGain >= 0 ? '▲' : '▼'}{Math.abs(pos.unrealizedGainPercent).toFixed(1)}%
-                  </Text>
+                  <View style={[s.legendGainRow, { opacity: isDim ? 0.35 : 1 }]}>
+                    {changeCaret(pos.unrealizedGain) && (
+                      <Ionicons
+                        name={changeCaret(pos.unrealizedGain)!}
+                        size={9}
+                        color={changeColor(pos.unrealizedGain, theme)}
+                      />
+                    )}
+                    <Text style={[s.legendGain, { color: changeColor(pos.unrealizedGain, theme) }]}>
+                      {Math.abs(pos.unrealizedGainPercent).toFixed(1)}%
+                    </Text>
+                  </View>
                 )}
               </View>
             </TouchableOpacity>
@@ -404,5 +412,10 @@ const s = StyleSheet.create({
   legendGain: {
     fontSize: 10,
     fontWeight: '600',
+  },
+  legendGainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 1,
   },
 });

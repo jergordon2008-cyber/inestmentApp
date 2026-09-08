@@ -6,6 +6,7 @@ import {
 import { showAlert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { changeColor, changeSign } from '../utils/change';
 import { useClassroomStore, Classroom, Assignment, ClassMember } from '../services/classroomStore';
 import { useUserStore } from '../services/userStore';
 
@@ -221,8 +222,8 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                           ${(m.portfolioValue ?? 100000).toLocaleString()} · {m.lessonsCompleted ?? 0} lessons
                         </Text>
                       </View>
-                      <Text style={[s.studentMeta, { color: (m.portfolioReturn ?? 0) >= 0 ? theme.colors.success : theme.colors.danger, fontWeight: '700' }]}>
-                        {(m.portfolioReturn ?? 0) >= 0 ? '+' : ''}{(m.portfolioReturn ?? 0).toFixed(1)}%
+                      <Text style={[s.studentMeta, { color: changeColor(m.portfolioReturn, theme), fontWeight: '700' }]}>
+                        {changeSign(m.portfolioReturn)}{(m.portfolioReturn ?? 0).toFixed(1)}%
                       </Text>
                     </View>
                   ))}

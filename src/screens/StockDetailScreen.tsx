@@ -3,6 +3,7 @@ import {
   View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { changeCaret, changeColor, changeSign, changeTone } from '../utils/change';
 import { useTheme } from '../context/ThemeContext';
 import { usePortfolioStore } from '../services/portfolioStore';
 import { fetchStock, getDataSourceLabel } from '../services/marketDataFacade';
@@ -51,8 +52,10 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
   );
 
   const position = portfolio?.positions.find(p => p.symbol === symbol);
-  const isUp = stock.changePercent >= 0;
-  const color = isUp ? theme.colors.primary : theme.colors.danger;
+  const changeCaretName = changeCaret(stock.changePercent);
+  const color = changeTone(stock.changePercent) === 'up'
+    ? theme.colors.primary
+    : changeColor(stock.changePercent, theme);
   const isBlueChip = BLUE_CHIP_SYMBOLS.has(symbol);
 
   return (
@@ -97,9 +100,10 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
           <View style={s.priceRow}>
             <View>
               <Text style={[s.price, { color: theme.colors.textPrimary }]}>${stock.price.toFixed(2)}</Text>
-              <View style={[s.changePill, { backgroundColor: color + '18' }]}>
+              <View style={[s.changePill, s.changePillRow, { backgroundColor: color + '18' }]}>
+                {changeCaretName && <Ionicons name={changeCaretName} size={11} color={color} />}
                 <Text style={[s.change, { color }]}>
-                  {isUp ? '▲' : '▼'} ${Math.abs(stock.change).toFixed(2)}  ({isUp ? '+' : ''}{stock.changePercent.toFixed(2)}%)
+                  ${Math.abs(stock.change).toFixed(2)}  ({changeSign(stock.changePercent)}{stock.changePercent.toFixed(2)}%)
                 </Text>
               </View>
             </View>
@@ -122,8 +126,8 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
             <Ionicons name="checkmark" size={13} color={theme.colors.primary} style={{ marginTop: 1 }} />
             <Text style={[s.positionText, { flex: 1, color: theme.colors.primary }]}>
               You own {position.shares.toFixed(4)} shares · Avg ${position.averageCost.toFixed(2)} ·{' '}
-              <Text style={{ color: position.unrealizedGain >= 0 ? theme.colors.primary : theme.colors.danger }}>
-                {position.unrealizedGain >= 0 ? '+' : ''}{position.unrealizedGain.toFixed(2)} ({position.unrealizedGainPercent.toFixed(2)}%)
+              <Text style={{ color: changeColor(position.unrealizedGain, theme) }}>
+                {changeSign(position.unrealizedGain)}{position.unrealizedGain.toFixed(2)} ({position.unrealizedGainPercent.toFixed(2)}%)
               </Text>
             </Text>
           </View>
@@ -158,15 +162,13 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
         {/* Tab Content */}
         {tab === 'overview' && (
           <View style={s.statsGrid}>
+            {/* Only fields the live quote actually supplies. P/E, EPS, Dividend,
+                Beta, 52W High/Low and Volume used to sit here rendering '—' on
+                every stock — Finnhub's free tier doesn't return them (see
+                finnhubAdapter), so the cards are gone rather than empty. */}
             {[
-              { label: 'P/E Ratio',  val: stock.peRatio?.toFixed(1) ?? '—' },
-              { label: 'EPS',        val: stock.eps != null ? `$${stock.eps.toFixed(2)}` : '—' },
-              { label: 'Dividend',   val: stock.dividendYield == null ? '—' : stock.dividendYield > 0 ? `${stock.dividendYield.toFixed(2)}%` : 'None' },
-              { label: 'Beta',       val: stock.beta?.toFixed(2) ?? '—' },
-              { label: '52W High',   val: stock.yearHigh != null ? `$${stock.yearHigh.toFixed(2)}` : '—' },
-              { label: '52W Low',    val: stock.yearLow != null ? `$${stock.yearLow.toFixed(2)}` : '—' },
-              { label: 'Volume',     val: stock.volume != null ? `${(stock.volume / 1e6).toFixed(1)}M` : '—' },
-              { label: 'Day Range',  val: `$${stock.dayLow?.toFixed(2)} – $${stock.dayHigh?.toFixed(2)}` },
+              { label: 'Day Range',      val: `$${stock.dayLow?.toFixed(2)} – $${stock.dayHigh?.toFixed(2)}` },
+              { label: 'Previous Close', val: `$${stock.previousClose?.toFixed(2)}` },
             ].map(row => (
               <View key={row.label} style={[s.statCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
                 <Text style={[s.statLabel, { color: theme.colors.textTertiary }]}>{row.label}</Text>
@@ -178,17 +180,14 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
 
         {tab === 'stats' && (
           <View style={[s.fundamentalsCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            {/* Same rule as Overview: P/E, PEG, EPS, Dividend Yield and Beta
+                aren't in the free tier's payload, so they aren't rendered. */}
             {[
               { label: 'Market Cap',     val: `$${(stock.marketCap / 1e9).toFixed(1)}B` },
-              { label: 'P/E Ratio',      val: stock.peRatio?.toFixed(2) ?? '—' },
-              { label: 'PEG Ratio',      val: stock.pegRatio?.toFixed(2) ?? '—' },
-              { label: 'EPS (TTM)',      val: stock.eps != null ? `$${stock.eps.toFixed(2)}` : '—' },
-              { label: 'Dividend Yield', val: stock.dividendYield == null ? '—' : stock.dividendYield > 0 ? `${stock.dividendYield.toFixed(3)}%` : 'None' },
-              { label: 'Beta',           val: stock.beta?.toFixed(3) ?? '—' },
               { label: 'Exchange',       val: stock.exchange ?? '—' },
               { label: 'Industry',       val: stock.industry ?? '—' },
-            ].map((row, i) => (
-              <View key={row.label} style={[s.fundamentalRow, { borderBottomColor: theme.colors.border, borderBottomWidth: i < 7 ? 0.5 : 0 }]}>
+            ].map((row, i, rows) => (
+              <View key={row.label} style={[s.fundamentalRow, { borderBottomColor: theme.colors.border, borderBottomWidth: i < rows.length - 1 ? 0.5 : 0 }]}>
                 <Text style={[s.fundamentalLabel, { color: theme.colors.textSecondary }]}>{row.label}</Text>
                 <Text style={[s.fundamentalVal, { color: theme.colors.textPrimary }]}>{row.val}</Text>
               </View>
@@ -232,6 +231,7 @@ const styles = (theme: any) => StyleSheet.create({
   priceRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
   price:      { fontSize: 38, fontWeight: '900', letterSpacing: -1.5 },
   changePill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, marginTop: 6, alignSelf: 'flex-start' },
+  changePillRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
   change:     { fontSize: 13, fontWeight: '700' },
   mcapLabel:  { fontSize: 10, fontWeight: '600', letterSpacing: 0.5, marginBottom: 3 },
   mcap:       { fontSize: 16, fontWeight: '700' },

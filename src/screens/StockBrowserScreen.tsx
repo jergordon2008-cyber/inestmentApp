@@ -10,7 +10,7 @@
  * This prevents new investors from making risky picks before they're ready.
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -25,7 +25,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { Card } from '../components/Card';
-import { searchStocks, fetchAllTier1, getAllSectors, getStocksBySector } from '../services/marketDataFacade';
+import { searchStocks, fetchAllTier1, getStocksBySector } from '../services/marketDataFacade';
+import { changeCaret, changeColor } from '../utils/change';
 import { Stock } from '../types';
 
 const BLUE_CHIP_SYMBOLS = new Set([
@@ -106,7 +107,14 @@ export function StockBrowserScreen({ onStockPress, onBack }: StockBrowserScreenP
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
 
-  const sectors = useMemo(() => ['All', ...getAllSectors()], []);
+  // Derived from the stocks actually loaded, not the static database. The two
+  // disagree: live rows carry Finnhub's own industry taxonomy while the static
+  // file uses GICS sector names, so chips like "Consumer Discretionary" could
+  // never match a row and always filtered to nothing.
+  const sectors = useMemo(
+    () => ['All', ...Array.from(new Set(allStocks.map(s => s.sector).filter(Boolean))).sort()],
+    [allStocks],
+  );
 
   // Load stocks on mount
   useEffect(() => {
@@ -129,6 +137,14 @@ export function StockBrowserScreen({ onStockPress, onBack }: StockBrowserScreenP
     results = applyFilters(results, filters);
     return results.sort((a, b) => b.marketCap - a.marketCap);
   }, [query, selectedSector, allStocks, filters]);
+
+  // Picking a sector swaps the rows under a scroll offset that belonged to the
+  // previous sector. Keyed on the sector only, so switching tabs or coming back
+  // from a stock keeps the reader where they were.
+  const listRef = useRef<FlatList<Stock>>(null);
+  useEffect(() => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, [selectedSector]);
 
   const activeFiltersCount = countActiveFilters(filters);
   
@@ -225,6 +241,7 @@ export function StockBrowserScreen({ onStockPress, onBack }: StockBrowserScreenP
       
       {/* Results */}
       <FlatList
+        ref={listRef}
         data={stocks}
         keyExtractor={item => item.symbol}
         contentContainerStyle={styles.list}
@@ -256,7 +273,8 @@ function StockListItem({ stock, onPress, theme }: {
   onPress: () => void;
   theme: any
 }) {
-  const isPositive = stock.change >= 0;
+  const caret = changeCaret(stock.change);
+  const changeTint = changeColor(stock.change, theme);
   const isBlueChip = BLUE_CHIP_SYMBOLS.has(stock.symbol);
 
   return (
@@ -293,15 +311,8 @@ function StockListItem({ stock, onPress, theme }: {
               ${stock.price.toFixed(2)}
             </Text>
             <View style={styles.stockChangeRow}>
-              <Ionicons
-                name={isPositive ? 'caret-up' : 'caret-down'}
-                size={11}
-                color={isPositive ? theme.colors.success : theme.colors.danger}
-              />
-              <Text style={[
-                styles.stockChange,
-                { color: isPositive ? theme.colors.success : theme.colors.danger },
-              ]}>
+              {caret && <Ionicons name={caret} size={11} color={changeTint} />}
+              <Text style={[styles.stockChange, { color: changeTint }]}>
                 {Math.abs(stock.changePercent).toFixed(2)}%
               </Text>
             </View>

@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Tex
 import { showAlert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { changeColor, changeSign } from '../utils/change';
 import { useDecisionJournalStore, REASON_CONFIG, TradeReason } from '../services/decisionJournalStore';
 
 interface Props { onBack: () => void; }
@@ -56,15 +57,15 @@ export function DecisionJournalScreen({ onBack }: Props) {
                 {sortedReasons.map(r => {
                   const cfg = REASON_CONFIG[r];
                   const stat = stats[r];
-                  const isPositive = stat.avgOutcome >= 0;
+                  const outcomeTint = changeColor(stat.avgOutcome, theme);
                   return (
                     <View key={r} style={[s.statCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                         <Ionicons name={cfg.icon as any} size={18} color={cfg.color} />
                         <Text style={[s.statLabel, { color: theme.colors.textPrimary }]}>{cfg.label}</Text>
                         <View style={{ flex: 1 }} />
-                        <Text style={{ color: isPositive ? theme.colors.success : theme.colors.danger, fontWeight: '800' }}>
-                          {isPositive ? '+' : ''}{stat.avgOutcome.toFixed(1)}%
+                        <Text style={{ color: outcomeTint, fontWeight: '800' }}>
+                          {changeSign(stat.avgOutcome)}{stat.avgOutcome.toFixed(1)}%
                         </Text>
                       </View>
                       <Text style={[s.statMeta, { color: theme.colors.textTertiary }]}>

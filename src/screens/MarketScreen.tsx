@@ -23,6 +23,7 @@ import { getTierFilteredNews, getFramingForTier } from '../data/newsFeed';
 import { PortfolioScreen } from './PortfolioScreen';
 import { NewsItem } from '../types';
 import { fs, sp } from '../constants/responsive';
+import { changeColor } from '../utils/change';
 
 type Tab = 'news' | 'portfolio';
 type NewsFilter = 'all' | 'high_impact' | 'positive' | 'negative';
@@ -124,8 +125,7 @@ export function MarketScreen({ onStockPress, onTradePress, onBrowsePress, onTrad
   if (filter === 'negative')    news = news.filter(n => n.sentiment === 'negative');
   if (filter === 'high_impact') news = news.filter(n => n.importance >= 4);
 
-  const isUp  = (portfolio?.totalReturn ?? 0) >= 0;
-  const perf  = isUp ? theme.colors.success : theme.colors.danger;
+  const perf  = changeColor(portfolio?.totalReturn, theme);
 
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.colors.background }]}>
@@ -173,7 +173,7 @@ export function MarketScreen({ onStockPress, onTradePress, onBrowsePress, onTrad
           theme={theme}
         />
       ) : (
-        <View style={{ flex: 1, marginTop: -sp(16) }}>
+        <View style={{ flex: 1, marginTop: sp(12) }}>
           <PortfolioScreen
             embedded
             onBack={() => setActiveTab('news')}
@@ -191,6 +191,13 @@ export function MarketScreen({ onStockPress, onTradePress, onBrowsePress, onTrad
 // ── News Tab ──────────────────────────────────────────────────────────────────
 
 function NewsTab({ news, filter, setFilter, expandedId, setExpandedId, tier, onStockPress, onTradePress, theme }: any) {
+  // Switching filter swaps the list contents underneath a scroll position that
+  // belonged to the previous filter, landing the reader mid-list.
+  const listRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    listRef.current?.scrollTo({ y: 0, animated: false });
+  }, [filter]);
+
   const filters: { id: NewsFilter; label: string; icon: IoniconName }[] = [
     { id: 'all',         label: 'All',        icon: 'globe-outline'         },
     { id: 'high_impact', label: 'High Impact', icon: 'flash-outline'         },
@@ -231,7 +238,7 @@ function NewsTab({ news, filter, setFilter, expandedId, setExpandedId, tier, onS
       </View>
 
       {/* News list */}
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={s.newsScroll} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={listRef} style={{ flex: 1 }} contentContainerStyle={s.newsScroll} showsVerticalScrollIndicator={false}>
         {news.map((item: NewsItem) => (
           <MarketNewsCard
             key={item.id}

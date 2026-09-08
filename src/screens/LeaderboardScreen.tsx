@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { changeColor, changeSign } from '../utils/change';
 import { useUserStore } from '../services/userStore';
 import { listLeaderboard, PublicStats } from '../services/firestoreSync';
 
@@ -66,9 +67,9 @@ export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
           <View style={styles.rankBannerRow}>
             <Text style={[styles.rankBannerNumber, { color: theme.colors.primary }]}>#{rank}</Text>
             <Text style={[styles.rankBannerReturn, {
-              color: userEntry.totalReturnPercent >= 0 ? theme.colors.success : theme.colors.danger,
+              color: changeColor(userEntry.totalReturnPercent, theme),
             }]}>
-              {userEntry.totalReturnPercent >= 0 ? '+' : ''}{userEntry.totalReturnPercent.toFixed(2)}%
+              {changeSign(userEntry.totalReturnPercent)}{userEntry.totalReturnPercent.toFixed(2)}%
             </Text>
           </View>
         </View>
@@ -117,7 +118,7 @@ export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
 function LeaderboardRow({ entry, rank, isCurrentUser, theme }: {
   entry: PublicStats; rank: number; isCurrentUser: boolean; theme: any;
 }) {
-  const isPositive = entry.totalReturnPercent >= 0;
+  const returnTint = changeColor(entry.totalReturnPercent, theme);
   // Top three get a medal in the app's icon set, tinted gold/silver/bronze.
   const medalColor = rank === 1 ? '#FFD700' : rank === 2 ? '#C0C0C0' : rank === 3 ? '#CD7F32' : null;
 
@@ -144,8 +145,8 @@ function LeaderboardRow({ entry, rank, isCurrentUser, theme }: {
         <Text style={[styles.tierLabel, { color: theme.colors.textTertiary }]}>Tier {entry.currentTier}</Text>
       </View>
 
-      <Text style={[styles.returnText, { color: isPositive ? theme.colors.success : theme.colors.danger }]}>
-        {isPositive ? '+' : ''}{entry.totalReturnPercent.toFixed(2)}%
+      <Text style={[styles.returnText, { color: returnTint }]}>
+        {changeSign(entry.totalReturnPercent)}{entry.totalReturnPercent.toFixed(2)}%
       </Text>
     </View>
   );

@@ -17,6 +17,7 @@ import { tier2Lessons } from '../data/tier2curriculum';
 import { tier3Lessons } from '../data/tier3curriculum';
 import { getStockSync } from '../services/marketDataFacade';
 import { fs, sp, isTablet } from '../constants/responsive';
+import { changeCaret, changeColor, changeSign } from '../utils/change';
 
 const ALL_LESSONS = [...tier1Lessons, ...tier2Lessons, ...tier3Lessons];
 
@@ -77,8 +78,8 @@ export function HomeScreen({
   const totalReturn    = portfolio?.totalReturn ?? 0;
   const totalReturnPct = portfolio?.totalReturnPercent ?? 0;
   const cash           = portfolio?.currentCash ?? 100000;
-  const isUp           = totalReturn >= 0;
-  const perf           = isUp ? theme.colors.success : theme.colors.danger;
+  const perf           = changeColor(totalReturn, theme);
+  const returnCaret    = changeCaret(totalReturn);
 
   const QUICK_ACTIONS: { icon: IoniconName; label: string; onPress?: () => void; color: string }[] = [
     { icon: 'search',       label: 'Browse',    onPress: onBrowseStocksPress, color: theme.colors.info    },
@@ -150,12 +151,12 @@ export function HomeScreen({
 
               <View style={s.heroChips}>
                 <View style={[s.chip, { backgroundColor: perf + '18' }]}>
-                  <Text style={[s.chipIcon, { color: perf }]}>{isUp ? '▲' : '▼'}</Text>
+                  {returnCaret && <Ionicons name={returnCaret} size={fs(11)} color={perf} />}
                   <Text style={[s.chipText, { color: perf }]}>
-                    {isUp ? '+' : ''}${Math.abs(totalReturn).toFixed(2)}
+                    {changeSign(totalReturn)}${Math.abs(totalReturn).toFixed(2)}
                   </Text>
                   <Text style={[s.chipSub, { color: perf + 'BB' }]}>
-                    ({isUp ? '+' : ''}{totalReturnPct.toFixed(2)}%)
+                    ({changeSign(totalReturnPct)}{totalReturnPct.toFixed(2)}%)
                   </Text>
                 </View>
                 <View style={[s.chip, { backgroundColor: theme.colors.surfaceMuted }]}>
@@ -316,9 +317,8 @@ function WatchlistRow({
   const stock = getStockSync(symbol);
   if (!stock) return null;
 
-  const up      = (stock.changePercent ?? 0) >= 0;
-  const c       = up ? theme.colors.success : theme.colors.danger;
-  const pctText = `${up ? '+' : ''}${(stock.changePercent ?? 0).toFixed(2)}%`;
+  const c       = changeColor(stock.changePercent, theme);
+  const pctText = `${changeSign(stock.changePercent)}${(stock.changePercent ?? 0).toFixed(2)}%`;
 
   return (
     <Animated.View style={{ opacity, transform: [{ translateY: y }] }}>
@@ -406,7 +406,6 @@ const s = StyleSheet.create({
   heroValue:    { fontSize: fs(50), fontWeight: '800', letterSpacing: -2, lineHeight: fs(56) },
   heroChips:    { flexDirection: 'row', gap: sp(8), marginBottom: sp(16), flexWrap: 'wrap' },
   chip:         { flexDirection: 'row', alignItems: 'center', gap: sp(4), paddingHorizontal: sp(10), paddingVertical: sp(7), borderRadius: 22 },
-  chipIcon:     { fontSize: fs(11), fontWeight: '800' },
   chipText:     { fontSize: fs(13), fontWeight: '700' },
   chipSub:      { fontSize: fs(12), fontWeight: '500' },
   heroCTA:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 0.5, paddingTop: sp(12) },

@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { changeColor, changeSign } from '../utils/change';
 import { listAllUserProfiles, adminLoadPortfolio, adminLoadJournal } from '../services/firestoreSync';
 import { User, Portfolio } from '../types';
 import { JournalEntry } from '../services/tradeJournalStore';
@@ -189,8 +190,8 @@ function StudentDetail({ student, onBack, theme }: { student: User; onBack: () =
               <Text style={[s.bigValue, { color: theme.colors.textPrimary }]}>
                 ${portfolio.totalValue.toLocaleString('en-US', { maximumFractionDigits: 0 })}
               </Text>
-              <Text style={{ color: portfolio.totalReturn >= 0 ? theme.colors.success : theme.colors.danger, fontWeight: '700', marginBottom: sp(10) }}>
-                {portfolio.totalReturn >= 0 ? '+' : ''}${portfolio.totalReturn.toFixed(2)} ({portfolio.totalReturnPercent.toFixed(2)}%)
+              <Text style={{ color: changeColor(portfolio.totalReturn, theme), fontWeight: '700', marginBottom: sp(10) }}>
+                {changeSign(portfolio.totalReturn)}${portfolio.totalReturn.toFixed(2)} ({portfolio.totalReturnPercent.toFixed(2)}%)
               </Text>
               <Text style={[s.detailValue, { color: theme.colors.textSecondary }]}>
                 {portfolio.positions.length} open position{portfolio.positions.length === 1 ? '' : 's'} · {portfolio.trades.length} total trades

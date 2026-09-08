@@ -13,6 +13,7 @@ import { AnimatedNumber } from '../components/AnimatedNumber';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { PortfolioPieChart } from '../components/PortfolioPieChart';
 import { Position } from '../types';
+import { changeCaret, changeColor, changeSign } from '../utils/change';
 
 interface Props {
   onBack: () => void; onStockPress: (sym: string) => void; onBrowsePress: () => void;
@@ -80,8 +81,7 @@ export function PortfolioScreen({ onBack, onStockPress, onBrowsePress, embedded,
   );
 
   const totalReturn    = portfolio.totalReturn ?? 0;
-  const isUp           = totalReturn >= 0;
-  const perf           = isUp ? theme.colors.success : theme.colors.danger;
+  const perf           = changeColor(totalReturn, theme);
   const investedValue  = portfolio.totalValue - portfolio.currentCash;
   const cashPct        = (portfolio.currentCash / portfolio.totalValue) * 100;
 
@@ -137,7 +137,7 @@ export function PortfolioScreen({ onBack, onStockPress, onBrowsePress, embedded,
               <View style={[s.balChip, { backgroundColor: perf + '18' }]}>
                 <Text style={[s.balChipLabel, { color: theme.colors.textTertiary }]}>All-time return</Text>
                 <Text style={[s.balChipVal, { color: perf }]}>
-                  {isUp ? '+' : ''}${Math.abs(totalReturn).toFixed(2)} ({portfolio.totalReturnPercent?.toFixed(2) ?? '0.00'}%)
+                  {changeSign(totalReturn)}${Math.abs(totalReturn).toFixed(2)} ({portfolio.totalReturnPercent?.toFixed(2) ?? '0.00'}%)
                 </Text>
               </View>
               <View style={[s.balChip, { backgroundColor: theme.colors.surfaceMuted }]}>
@@ -273,8 +273,8 @@ function PositionCard({ pos, index, theme, onPress }: { pos: Position; index: nu
     ]).start();
   }, []);
 
-  const up = pos.unrealizedGain >= 0;
-  const c  = up ? theme.colors.success : theme.colors.danger;
+  const c     = changeColor(pos.unrealizedGain, theme);
+  const caret = changeCaret(pos.unrealizedGain);
 
   return (
     <Animated.View style={{ opacity, transform: [{ translateY: y }] }}>
@@ -298,9 +298,9 @@ function PositionCard({ pos, index, theme, onPress }: { pos: Position; index: nu
               {pos.shares.toFixed(4)} shares
             </Text>
             <View style={[s.posReturnPill, { backgroundColor: c + '18' }]}>
-              <Ionicons name={up ? 'caret-up' : 'caret-down'} size={9} color={c} />
+              {caret && <Ionicons name={caret} size={9} color={c} />}
               <Text style={[s.posReturn, { color: c }]}>
-                {up ? '+' : ''}{pos.unrealizedGain.toFixed(2)} ({pos.unrealizedGainPercent.toFixed(2)}%)
+                {changeSign(pos.unrealizedGain)}{pos.unrealizedGain.toFixed(2)} ({pos.unrealizedGainPercent.toFixed(2)}%)
               </Text>
             </View>
           </View>

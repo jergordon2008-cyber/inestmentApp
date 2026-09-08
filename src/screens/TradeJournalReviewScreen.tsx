@@ -29,6 +29,7 @@ import {
 import { showAlert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { changeColor, changeSign } from '../utils/change';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { useTradeJournalStore, JournalEntry } from '../services/tradeJournalStore';
@@ -108,9 +109,9 @@ export function TradeJournalReviewScreen({
               <View style={styles.statBox}>
                 <Text style={[
                   styles.statValue,
-                  { color: stats.avgReturn >= 0 ? theme.colors.success : theme.colors.danger }
+                  { color: changeColor(stats.avgReturn, theme) }
                 ]}>
-                  {stats.avgReturn >= 0 ? '+' : ''}{stats.avgReturn.toFixed(1)}%
+                  {changeSign(stats.avgReturn)}{stats.avgReturn.toFixed(1)}%
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
                   Avg return

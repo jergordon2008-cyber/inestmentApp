@@ -5,13 +5,14 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { AnimatedNumber } from '../components/AnimatedNumber';
 
 const { width: W, height: H } = Dimensions.get('window');
 
 interface Props { onGetStarted: () => void; onSignIn: () => void; }
 
-const CHART_BARS = [22, 35, 28, 44, 38, 52, 46, 60, 55, 70, 66, 80, 76, 90, 85];
+// Uniform heights: this is decoration, not a chart of anything. Any rising
+// shape here would read as a track record the app cannot claim.
+const CHART_BARS = Array.from({ length: 15 }, () => 46);
 
 export function WelcomeScreen({ onGetStarted, onSignIn }: Props) {
   const { theme } = useTheme();
@@ -100,23 +101,17 @@ export function WelcomeScreen({ onGetStarted, onSignIn }: Props) {
                 style={StyleSheet.absoluteFillObject}
               />
 
-              <Text style={[s.cardLabel, { color: theme.colors.textTertiary }]}>PAPER PORTFOLIO</Text>
+              {/* Every student really does start with $100,000 of paper money
+                  (portfolioStore's initialCash), so this is the one number here
+                  that is true. The figure this card used to show — a $112,453
+                  balance counting up to a "+$12,453 (12.4%) all-time" gain
+                  beside a LIVE badge — was invented, and read as a track record
+                  on the first screen a student sees. */}
+              <Text style={[s.cardLabel, { color: theme.colors.textTertiary }]}>STARTING PAPER BALANCE</Text>
 
               <View style={s.balanceRow}>
                 <Text style={[s.currencySign, { color: theme.colors.textSecondary }]}>$</Text>
-                <AnimatedNumber
-                  value={112453}
-                  formatter={n => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  duration={1100}
-                  delay={400}
-                  style={[s.balanceNum, { color: theme.colors.textPrimary }]}
-                />
-              </View>
-
-              <View style={[s.gainBadge, { backgroundColor: theme.colors.success + '1A' }]}>
-                <Text style={[s.gainText, { color: theme.colors.success }]}>
-                  ▲  +$12,453  (12.4%)  all-time
-                </Text>
+                <Text style={[s.balanceNum, { color: theme.colors.textPrimary }]}>100,000.00</Text>
               </View>
 
               {/* Mini bar chart */}
@@ -128,7 +123,7 @@ export function WelcomeScreen({ onGetStarted, onSignIn }: Props) {
                       s.bar,
                       {
                         height: h * 0.52,
-                        backgroundColor: i >= 11 ? theme.colors.primary : theme.colors.primary + '30',
+                        backgroundColor: theme.colors.primary + '30',
                         borderRadius: 3,
                         transform: [{ scale: cardS }],
                       },
@@ -139,10 +134,6 @@ export function WelcomeScreen({ onGetStarted, onSignIn }: Props) {
 
               <View style={[s.cardFooter, { borderTopColor: theme.colors.border }]}>
                 <Text style={[s.footerLeft, { color: theme.colors.textTertiary }]}>Paper money · Zero real risk</Text>
-                <View style={[s.livePill, { backgroundColor: theme.colors.success + '1A' }]}>
-                  <View style={[s.liveDot, { backgroundColor: theme.colors.success }]} />
-                  <Text style={[s.liveLabel, { color: theme.colors.success }]}>LIVE</Text>
-                </View>
               </View>
             </LinearGradient>
           </Animated.View>
@@ -234,15 +225,10 @@ const s = StyleSheet.create({
   balanceRow:  { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
   currencySign:{ fontSize: 22, fontWeight: '700', marginTop: 8, marginRight: 2 },
   balanceNum:  { fontSize: 42, fontWeight: '800', letterSpacing: -2, lineHeight: 50 },
-  gainBadge:   { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginBottom: 16 },
-  gainText:    { fontSize: 13, fontWeight: '700' },
   chartRow:    { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 44, marginBottom: 14 },
   bar:         { flex: 1 },
   cardFooter:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 0.5, paddingTop: 12 },
   footerLeft:  { fontSize: 11 },
-  livePill:    { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
-  liveDot:     { width: 5, height: 5, borderRadius: 3 },
-  liveLabel:   { fontSize: 9, fontWeight: '800', letterSpacing: 0.8 },
 
   // Copy
   copyBlock:  { gap: 0 },

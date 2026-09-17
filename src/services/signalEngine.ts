@@ -19,7 +19,8 @@
  */
 
 import { Signal, SignalType, Stock, Tier } from '../types';
-import { getAllTier1Stocks, getStocksBySector, getAllSectors } from './stockDataService';
+import { getAllTier1Stocks, getStocksBySector, getAllSectors, getStock } from './stockDataService';
+import { getEarningsSurprises } from './finnhubAdapter';
 
 // ============================================================================
 // SIGNAL GENERATORS
@@ -72,42 +73,94 @@ function generateBlueChipSignals(stocks: Stock[]): Signal[] {
 }
 
 /**
- * Generate earnings beat signals (simulated - in production, would use real earnings calendar)
+ * Earnings surprise signal for ONE symbol, from Finnhub's real reported
+ * actual-vs-estimate EPS (see getEarningsSurprises).
+ *
+ * This replaces a generator that picked the day's three biggest tech/
+ * healthcare gainers — a price move, not an earnings event — and then
+ * INVENTED a beat: `5 + idx*3 + Math.random()*4`, re-rolled on every
+ * render, so the same ticker showed a different "beat earnings by 11.3%"
+ * each time the tab opened. That number was attached to a real company
+ * name and reached the screen verbatim.
+ *
+ * Honesty rules this generator follows:
+ *  - It reports what happened, including a MISS or in-line result. A signal
+ *    that can only ever say "beat" is still a lie by omission (AAPL's latest
+ *    quarter was -0.89%).
+ *  - It fires only when the most recent quarter is genuinely recent
+ *    (period end within RECENT_QUARTER_DAYS); a year-old print is not an
+ *    "event" and is not surfaced as one.
+ *  - No data (no API key, rate-limited, unknown ticker, bad payload) means
+ *    no signal — never a substitute number.
  */
-function generateEarningsBeatSignals(stocks: Stock[]): Signal[] {
-  // Simulate: pick 3 random tech/healthcare stocks that "beat earnings"
-  const candidates = stocks.filter(s => 
-    (s.sector === 'Technology' || s.sector === 'Healthcare') &&
-    s.changePercent > 0 // moving up today
-  );
-  
-  // Take top 3 by today's gain (proxy for "just beat earnings")
-  const top = candidates
-    .sort((a, b) => b.changePercent - a.changePercent)
-    .slice(0, 3);
-  
-  return top.map((stock, idx) => {
-    const beatPercent = 5 + idx * 3 + Math.random() * 4; // 5-15% beat
-    return {
-      id: `signal_earnings_${stock.symbol}_${Date.now()}`,
-      type: 'earnings_beat' as SignalType,
-      tier: 1 as Tier,
-      category: 'event' as const,
-      symbol: stock.symbol,
-      title: 'Strong earnings beat',
-      description: `${stock.name} beat earnings estimates by ${beatPercent.toFixed(1)}% — markets typically reward this.`,
-      strength: beatPercent > 10 ? 'strong' as const : 'moderate' as const,
-      relatedLessonId: 'T1L11', // Reading financial news
-      educationalMessage: `When companies beat expectations, stocks often jump. This is the market repricing for new information. Watch ${stock.symbol} over the next few weeks — does the gain hold?`,
-      data: {
-        beatPercent,
-        todayChange: stock.changePercent,
-        sector: stock.sector,
-      },
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
-    };
-  });
+const RECENT_QUARTER_DAYS = 120;
+
+async function generateEarningsSurpriseSignal(symbol: string): Promise<Signal | null> {
+  const stock = getStock(symbol);
+  if (!stock) return null;
+
+  const raw = await getEarningsSurprises(symbol);
+  // Finnhub answers a rate-limit/error with a JSON *object*, not an array,
+  // and the adapter returns res.json() unvalidated.
+  if (!Array.isArray(raw)) return null;
+
+  const latest = raw
+    .filter(q =>
+      typeof q?.actual === 'number' &&
+      typeof q?.estimate === 'number' &&
+      typeof q?.surprisePercent === 'number' &&
+      typeof q?.period === 'string'
+    )
+    .sort((a, b) => (a.period < b.period ? 1 : -1))[0];
+  if (!latest) return null;
+
+  const periodEnd = new Date(latest.period).getTime();
+  if (!Number.isFinite(periodEnd)) return null;
+  const ageDays = (Date.now() - periodEnd) / (24 * 60 * 60 * 1000);
+  if (ageDays < 0 || ageDays > RECENT_QUARTER_DAYS) return null;
+
+  const pct = latest.surprisePercent;
+  const magnitude = Math.abs(pct);
+  const outcome: 'beat' | 'miss' | 'inline' =
+    magnitude < 0.05 ? 'inline' : pct > 0 ? 'beat' : 'miss';
+
+  const pctText = `${magnitude.toFixed(1)}%`;
+  const epsText = `EPS $${latest.actual.toFixed(2)} vs. $${latest.estimate.toFixed(2)} expected`;
+  const title =
+    outcome === 'beat' ? 'Beat earnings estimates'
+    : outcome === 'miss' ? 'Missed earnings estimates'
+    : 'Earnings in line with estimates';
+  const description =
+    outcome === 'inline'
+      ? `${stock.name} reported ${epsText} for the quarter ending ${latest.period} — essentially in line.`
+      : `${stock.name} ${outcome === 'beat' ? 'beat' : 'missed'} estimates by ${pctText} — ${epsText}, quarter ending ${latest.period}.`;
+
+  return {
+    id: `signal_earnings_${symbol}_${latest.period}`,
+    type: 'earnings_beat' as SignalType,
+    tier: 1 as Tier,
+    category: 'event' as const,
+    symbol,
+    title,
+    description,
+    strength: magnitude >= 5 ? 'strong' : magnitude >= 1 ? 'moderate' : 'weak',
+    relatedLessonId: 'T1L11', // Reading financial news
+    educationalMessage:
+      outcome === 'miss'
+        ? `A miss is the market learning the company earned less than it expected. Prices often drop first and settle later — watch ${symbol} over the next few weeks and ask whether the reaction was proportionate to a ${pctText} shortfall.`
+        : `When a company reports above (or right at) expectations, the price reprices on that new information. The size of the move relative to a ${pctText} surprise tells you what the market had already assumed. Watch whether ${symbol}'s reaction holds.`,
+    data: {
+      actualEps: latest.actual,
+      estimateEps: latest.estimate,
+      surprisePercent: pct,
+      outcome,
+      period: latest.period,
+      source: 'finnhub:/stock/earnings',
+    },
+    createdAt: new Date().toISOString(),
+    // The print stays a "recent event" until the recency window closes.
+    expiresAt: new Date(periodEnd + RECENT_QUARTER_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+  };
 }
 
 /**
@@ -200,10 +253,13 @@ export function generateSignalsForUser(userTier: Tier = 1): Signal[] {
   
   let signals: Signal[] = [];
   
-  // Tier 1 signals (always shown)
+  // Tier 1 signals (always shown). Earnings surprises are NOT generated here:
+  // they need a per-symbol network call, so they're attached only in
+  // getSignalsForStock() for the one ticker being viewed. The old
+  // generateEarningsBeatSignals() that used to sit in this list fabricated
+  // its beat percentage with Math.random() and has been removed.
   signals = signals.concat(
     generateBlueChipSignals(allStocks),
-    generateEarningsBeatSignals(allStocks),
     generateDividendSignals(allStocks),
     generateSectorMomentumSignals(),
   );
@@ -243,9 +299,12 @@ export function getSignalsForLesson(lessonId: string): Signal[] {
  * Get signals for a specific stock
  * (when user views a stock detail page, show all signals about it)
  */
-export function getSignalsForStock(symbol: string): Signal[] {
-  const allSignals = generateSignalsForUser();
-  return allSignals.filter(s => s.symbol === symbol);
+export async function getSignalsForStock(symbol: string): Promise<Signal[]> {
+  const synchronous = generateSignalsForUser().filter(s => s.symbol === symbol);
+  // One network call, for the one ticker on screen. Resolves to null when
+  // there's no real, recent print — in which case nothing is shown.
+  const earnings = await generateEarningsSurpriseSignal(symbol);
+  return earnings ? [earnings, ...synchronous] : synchronous;
 }
 
 /**

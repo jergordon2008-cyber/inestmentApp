@@ -31,12 +31,21 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
   const portfolio = usePortfolioStore(s => s.portfolio);
   const [stock, setStock] = useState<Stock | null>(null);
   const [signals, setSignals] = useState<Signal[]>([]);
+  // The earnings signal needs a network call, so the Signals tab has a real
+  // loading state rather than flashing "No signals" before the answer lands.
+  const [signalsLoading, setSignalsLoading] = useState(true);
   const [tab, setTab] = useState<'overview' | 'stats' | 'signals'>('overview');
   const s = styles(theme);
 
   useEffect(() => {
+    let cancelled = false;
     fetchStock(symbol).then(setStock);
-    setSignals(getSignalsForStock(symbol));
+    setSignalsLoading(true);
+    getSignalsForStock(symbol)
+      .then(result => { if (!cancelled) setSignals(result); })
+      .catch(() => { if (!cancelled) setSignals([]); })
+      .finally(() => { if (!cancelled) setSignalsLoading(false); });
+    return () => { cancelled = true; };
   }, [symbol]);
 
   if (!stock) return (
@@ -197,7 +206,9 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
 
         {tab === 'signals' && (
           <View>
-            {signals.length === 0 ? (
+            {signalsLoading ? (
+              <Text style={[{ padding: 20, color: theme.colors.textTertiary, textAlign: 'center' }]}>Checking recent earnings for {symbol}…</Text>
+            ) : signals.length === 0 ? (
               <Text style={[{ padding: 20, color: theme.colors.textTertiary, textAlign: 'center' }]}>No signals for {symbol} yet.</Text>
             ) : signals.map(sig => (
               <View key={sig.id} style={[s.signalCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>

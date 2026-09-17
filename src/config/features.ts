@@ -35,6 +35,15 @@ export const FEATURES = {
   // Not tied to LEGACY_FEATURES: the forum has no moderation story, so it
   // should not come back just because someone flips the master switch.
   forum: false,
+
+  // Market News sub-tab on the Portfolio screen. Its only data source is
+  // src/data/newsFeed.ts — five hand-written stories attributed to Reuters/
+  // Bloomberg/CNBC/WSJ/NYT with example.com URLs, re-stamped "2 hours ago" on
+  // every load, rendered under a LIVE pill. Hidden (not deleted) until it is
+  // backed by real Finnhub news; that work is sequenced after the shared-key
+  // rate-limiting fix, since the news endpoint would draw on the same quota.
+  // Deliberately not tied to LEGACY_FEATURES for the same reason as forum.
+  marketNews: false,
 } as const;
 
 export type FeatureKey = keyof typeof FEATURES;

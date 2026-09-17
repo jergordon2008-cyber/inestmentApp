@@ -20,6 +20,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useUserStore } from '../services/userStore';
 import { usePortfolioStore } from '../services/portfolioStore';
 import { getTierFilteredNews, getFramingForTier } from '../data/newsFeed';
+import { FEATURES } from '../config/features';
 import { PortfolioScreen } from './PortfolioScreen';
 import { NewsItem } from '../types';
 import { fs, sp } from '../constants/responsive';
@@ -116,11 +117,14 @@ export function MarketScreen({ onStockPress, onTradePress, onBrowsePress, onTrad
   const portfolio  = usePortfolioStore(s => s.portfolio);
   const tier       = (user?.currentTier ?? 1) as 1 | 2 | 3;
 
-  const [activeTab, setActiveTab] = useState<Tab>('news');
+  // With Market News flagged off there is exactly one sub-tab, so land on it.
+  const [activeTab, setActiveTab] = useState<Tab>(FEATURES.marketNews ? 'news' : 'portfolio');
   const [filter, setFilter]       = useState<NewsFilter>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  let news = getTierFilteredNews(tier, 25);
+  // Flag off → don't even build the list; the mock feed shouldn't be computed
+  // for a surface that isn't rendered.
+  let news = FEATURES.marketNews ? getTierFilteredNews(tier, 25) : [];
   if (filter === 'positive')    news = news.filter(n => n.sentiment === 'positive');
   if (filter === 'negative')    news = news.filter(n => n.sentiment === 'negative');
   if (filter === 'high_impact') news = news.filter(n => n.importance >= 4);
@@ -137,30 +141,36 @@ export function MarketScreen({ onStockPress, onTradePress, onBrowsePress, onTrad
               six-tab bar collapsed to three. */}
           <Text style={[s.title, { color: theme.colors.textPrimary }]}>Portfolio</Text>
           <Text style={[s.subtitle, { color: theme.colors.textSecondary }]}>
-            News · Trade · Positions
+            {FEATURES.marketNews ? 'News · Trade · Positions' : 'Trade · Positions'}
           </Text>
         </View>
-        {/* Live indicator */}
-        <View style={[s.livePill, { backgroundColor: theme.colors.success + '18', borderColor: theme.colors.success + '40' }]}>
-          <View style={[s.liveDot, { backgroundColor: theme.colors.success }]} />
-          <Text style={[s.liveText, { color: theme.colors.success }]}>LIVE</Text>
-        </View>
+        {/* Live indicator — described the news feed, so it goes with the feed.
+            Positions carry their own honest "Delayed up to 15 min" label. */}
+        {FEATURES.marketNews && (
+          <View style={[s.livePill, { backgroundColor: theme.colors.success + '18', borderColor: theme.colors.success + '40' }]}>
+            <View style={[s.liveDot, { backgroundColor: theme.colors.success }]} />
+            <Text style={[s.liveText, { color: theme.colors.success }]}>LIVE</Text>
+          </View>
+        )}
       </View>
 
-      {/* ── Sub-tab pills ── */}
-      <TabPill
-        tabs={[
-          { id: 'news',      label: 'Market News',   icon: 'newspaper-outline'  },
-          { id: 'portfolio', label: 'Your Portfolio', icon: 'pie-chart-outline'  },
-        ]}
-        active={activeTab}
-        onPress={setActiveTab}
-        accent={theme.colors.primary}
-        theme={theme}
-      />
+      {/* ── Sub-tab pills ── only meaningful with two tabs; hidden with news off */}
+      {FEATURES.marketNews && (
+        <TabPill
+          tabs={[
+            { id: 'news',      label: 'Market News',   icon: 'newspaper-outline'  },
+            { id: 'portfolio', label: 'Your Portfolio', icon: 'pie-chart-outline'  },
+          ]}
+          active={activeTab}
+          onPress={setActiveTab}
+          accent={theme.colors.primary}
+          theme={theme}
+        />
+      )}
 
-      {/* ── Content ── */}
-      {activeTab === 'news' ? (
+      {/* ── Content ── news only renders when the flag is on; NewsTab and
+          MarketNewsCard below stay intact so flipping the flag restores it. */}
+      {FEATURES.marketNews && activeTab === 'news' ? (
         <NewsTab
           news={news}
           filter={filter}

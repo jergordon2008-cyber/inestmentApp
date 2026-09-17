@@ -21,7 +21,7 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator, BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import type { RouteProp } from '@react-navigation/native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, StackActions } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useUserStore } from '../services/userStore';
@@ -124,12 +124,26 @@ const TAB_TO_ROUTE = Object.fromEntries(
 
 function AppTabBar({ state, navigation }: BottomTabBarProps) {
   const routeName = state.routeNames[state.index] as keyof TabParamList;
-  return (
-    <TabBar
-      current={ROUTE_TO_TAB[routeName]}
-      onTabPress={(tab) => navigation.navigate(TAB_TO_ROUTE[tab])}
-    />
-  );
+  const current = ROUTE_TO_TAB[routeName];
+
+  const onTabPress = (tab: TabName) => {
+    if (tab === current) {
+      // Already on this tab — bare navigate() to the same route is a
+      // documented no-op in React Navigation, so re-tapping the active tab
+      // did nothing. Pop that tab's own nested stack to its first screen
+      // instead, matching the "tap active tab to go home" convention. If
+      // the nested stack has never navigated past its first screen, its
+      // `state` is undefined and there's nothing to pop.
+      const nestedState = state.routes[state.index].state;
+      if (nestedState) {
+        navigation.dispatch({ ...StackActions.popToTop(), target: nestedState.key });
+      }
+      return;
+    }
+    navigation.navigate(TAB_TO_ROUTE[tab]);
+  };
+
+  return <TabBar current={current} onTabPress={onTabPress} />;
 }
 
 // ── Learn tab ────────────────────────────────────────────────────────────────

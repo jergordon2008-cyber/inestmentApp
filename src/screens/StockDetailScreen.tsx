@@ -240,7 +240,7 @@ const styles = (theme: any) => StyleSheet.create({
   backRow:    { flexDirection: 'row', alignItems: 'center', gap: 2 },
   positionText:  { fontSize: 13, fontWeight: '600', lineHeight: 18 },
   tradeRow:   { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  buyBtn:     { flex: 2, borderRadius: 16, paddingVertical: 14, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center',
+  buyBtn:     { flex: 1, borderRadius: 16, paddingVertical: 14, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center',
                 shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.45, shadowRadius: 16, elevation: 5 },
   buyBtnText: { color: '#fff', fontSize: 15, fontWeight: '800', textAlign: 'center' },
   sellBtn:    { flex: 1, borderRadius: 16, paddingVertical: 14, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },

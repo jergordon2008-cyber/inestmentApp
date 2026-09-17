@@ -75,9 +75,17 @@ export async function getLiveStock(symbol: string): Promise<Stock | null> {
       profileRes.json() as Promise<FinnhubProfile>,
     ]);
     
-    // Validate we got real data (Finnhub returns empty objects for unknown symbols)
-    if (!quote.c || !profile.name) {
-      // No real data in the response — show the last real quote we have
+    // Validate we got a real quote. profile.name is NOT required here:
+    // Finnhub's /stock/profile2 returns {} for ETFs (confirmed live for
+    // VOO/SPY/QQQ/etc.) even though /quote returns a perfectly good price —
+    // requiring both previously discarded every real ETF quote and silently
+    // substituted the static Jan-2026 mock forever, which is how an ETF
+    // position's P&L stayed pinned at 0.00 no matter how the market moved.
+    // mapFinnhubToStock() already falls back to mock data for the
+    // decorative name/exchange/sector fields when profile is empty, so an
+    // empty profile only means "unknown fund," never "unknown price."
+    if (!quote.c) {
+      // No real quote in the response — show the last real quote we have
       // (with its real timestamp) rather than substituting a static price.
       if (cached) return cached.data;
       return getMockStock(symbol);
@@ -250,8 +258,16 @@ function mapFinnhubToStock(
     dayLow: quote.l,
     lastUpdated: new Date(quote.t * 1000).toISOString(),
 
-    // Market cap is in millions from Finnhub
-    marketCap: profile.marketCapitalization * 1_000_000,
+    // Market cap is in millions from Finnhub. profile.marketCapitalization
+    // is undefined for ETFs (empty profile) — undefined * 1_000_000 is NaN,
+    // and Stock.marketCap is a required number, so that would leak a NaN
+    // into every screen that formats it. Fall back to the mock entry's
+    // value, which is already 0 for every fund in stockDatabase (the
+    // existing, deliberate convention for "no market cap," not a fabricated
+    // number) rather than inventing one.
+    marketCap: profile.marketCapitalization
+      ? profile.marketCapitalization * 1_000_000
+      : (mock?.marketCap ?? 0),
 
     // Not available from the free /quote endpoint — left undefined rather
     // than backfilled with static data. (52-week high/low isn't derivable

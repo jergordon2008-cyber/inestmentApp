@@ -1,9 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, ScrollView,
-  TouchableOpacity, Animated, Easing, Switch,
+  TouchableOpacity, Animated, Easing, Switch, Modal,
 } from 'react-native';
-import { showAlert } from '../utils/alert';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -54,6 +53,7 @@ export function ProfileScreen({
   const user      = useUserStore(s => s.user);
   const portfolio = usePortfolioStore(s => s.portfolio);
   const streak    = useStreakStore(s => s.currentStreak);
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
 
   if (!user) return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.colors.background }]}>
@@ -65,14 +65,8 @@ export function ProfileScreen({
   const initial   = user.displayName.charAt(0).toUpperCase();
   const returnTint = changeColor(portfolio?.totalReturn, theme);
 
-  const handleSignOut = () => showAlert(
-    'Sign out?',
-    'Your progress is saved to your account and will be here when you sign back in.',
-    [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: onSignOut },
-    ]
-  );
+  const handleSignOut = () => setShowSignOutModal(true);
+  const confirmSignOut = () => { setShowSignOutModal(false); onSignOut(); };
 
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.colors.background }]}>
@@ -213,6 +207,37 @@ export function ProfileScreen({
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Sign-out confirmation — replaces a showAlert() call that degraded
+          to a raw window.confirm() on web (see src/utils/alert.ts), which
+          rendered the browser's own generic dialog instead of the app. */}
+      <Modal
+        visible={showSignOutModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSignOutModal(false)}
+      >
+        <View style={[s.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.65)' }]}>
+          <View style={[s.modalCard, { backgroundColor: theme.colors.surface }]}>
+            <View style={[s.modalIconWrap, { backgroundColor: theme.colors.danger + '18' }]}>
+              <Ionicons name="log-out-outline" size={26} color={theme.colors.danger} />
+            </View>
+            <Text style={[s.modalTitle, { color: theme.colors.textPrimary }]}>Sign out?</Text>
+            <Text style={[s.modalBody, { color: theme.colors.textSecondary }]}>
+              Your progress is saved to your account and will be here when you sign back in.
+            </Text>
+            <TouchableOpacity
+              onPress={confirmSignOut}
+              style={[s.modalBtn, { backgroundColor: theme.colors.danger + '14', borderColor: theme.colors.danger + '30' }]}
+            >
+              <Text style={[s.modalBtnText, { color: theme.colors.danger }]}>Sign Out</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowSignOutModal(false)} style={s.modalCancelBtn}>
+              <Text style={[s.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -280,4 +305,23 @@ const s = StyleSheet.create({
     marginHorizontal: 16, marginTop: 20, paddingVertical: 14, borderRadius: 16, borderWidth: 1,
   },
   signOutText: { fontSize: 14, fontWeight: '700' },
+
+  modalOverlay: { flex: 1, justifyContent: 'flex-end' },
+  modalCard: {
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: 24, paddingBottom: 40, alignItems: 'center',
+  },
+  modalIconWrap: {
+    width: 52, height: 52, borderRadius: 26,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 14,
+  },
+  modalTitle: { fontSize: 19, fontWeight: '800', marginBottom: 8, textAlign: 'center' },
+  modalBody: { fontSize: 13, lineHeight: 19, textAlign: 'center', marginBottom: 22 },
+  modalBtn: {
+    width: '100%', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 14, borderRadius: 16, borderWidth: 1, marginBottom: 10,
+  },
+  modalBtnText: { fontSize: 15, fontWeight: '700' },
+  modalCancelBtn: { paddingVertical: 8 },
+  modalCancelText: { fontSize: 14, fontWeight: '600' },
 });

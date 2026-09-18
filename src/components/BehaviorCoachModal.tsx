@@ -41,7 +41,10 @@ const BIAS_CONFIG: Record<BehaviorBias, {
   title:       string;
   bias:        string;
   explanation: string;
-  stat:        string;
+  /** Optional: a real, attributable finding. Omitted when we don't have one —
+   *  the stat block below simply doesn't render. Never fill this with an
+   *  invented number; this modal interrupts a live trade decision. */
+  stat?:       string;
   holdLabel:   string;
   color:       string;
 }> = {
@@ -49,7 +52,10 @@ const BIAS_CONFIG: Record<BehaviorBias, {
     icon:        'alert-circle-outline',
     title:       'Panic Selling Alert',
     bias:        'Loss Aversion',
-    explanation: 'Your brain processes investment losses 2.5× more painfully than equivalent gains feel good. This makes panic-selling feel rational when it usually isn\'t. Most drawdowns of this size recover within weeks.',
+    // Dropped: "Most drawdowns of this size recover within weeks." This fires
+    // at an 8% loss, and nothing supports a recovery timeline for a drawdown
+    // of that size — it was a reassurance, not a finding.
+    explanation: 'Your brain processes investment losses 2.5× more painfully than equivalent gains feel good. This makes panic-selling feel rational when it usually isn\'t.',
     stat:        'Investors who sold during the 2020 COVID crash (-34%) and waited to "feel safe" before re-entering missed the entire 100% recovery.',
     holdLabel:   'Hold Position',
     color:       '#F87171',
@@ -68,7 +74,11 @@ const BIAS_CONFIG: Record<BehaviorBias, {
     title:       'Selling Your Winner Early',
     bias:        'Disposition Effect',
     explanation: 'Investors systematically sell winners too early and hold losers too long — the exact opposite of what produces returns. You feel "locking in the gain" is prudent, but winners often keep winning.',
-    stat:        'Stocks that have risen 20%+ in the past 6 months outperform the market by an average of 4.4% over the next 12 months (momentum factor).',
+    // No stat. This previously claimed stocks up 20%+ over six months beat the
+    // market by 4.4% over the next twelve — a fabricated figure with no such
+    // published result behind it, shown at the moment a student decides
+    // whether to sell. The disposition-effect explanation above stands on its
+    // own; it describes a documented bias without predicting a return.
     holdLabel:   'Let It Run',
     color:       '#6C47FF',
   },
@@ -142,11 +152,13 @@ export function BehaviorCoachModal({
           {cfg.explanation}
         </Text>
 
-        {/* Research stat */}
-        <View style={[bc.statBox, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-          <Ionicons name="bar-chart-outline" size={14} color={theme.colors.primary} />
-          <Text style={[bc.statText, { color: theme.colors.textTertiary }]}>{cfg.stat}</Text>
-        </View>
+        {/* Research stat — only when we actually have one (see BIAS_CONFIG). */}
+        {!!cfg.stat && (
+          <View style={[bc.statBox, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <Ionicons name="bar-chart-outline" size={14} color={theme.colors.primary} />
+            <Text style={[bc.statText, { color: theme.colors.textTertiary }]}>{cfg.stat}</Text>
+          </View>
+        )}
 
         {/* Action buttons */}
         <View style={bc.actions}>

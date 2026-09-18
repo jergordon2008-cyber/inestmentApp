@@ -143,8 +143,16 @@ export function WelcomeScreen({ onGetStarted, onSignIn }: Props) {
             <Text style={[s.headline, { color: theme.colors.textPrimary }]}>
               Learn to invest{'\n'}like a pro.
             </Text>
+            {/* Lesson count is the real total across all three tiers:
+                12 (tier1Lessons) + 21 (tier2Lessons) + 10 (tier3Lessons) = 43.
+                It previously read "62+", which overstated the curriculum by
+                nearly half on the first screen a student sees. If you add or
+                remove lessons, update this number.
+                "AI-powered tutor" was also removed: FEATURES.aiTutor is false
+                and the tutor has no registered route, so it advertised a
+                feature nobody can open. */}
             <Text style={[s.subline, { color: theme.colors.textSecondary }]}>
-              62+ lessons · $100K paper portfolio · AI-powered tutor
+              43 lessons · $100K paper portfolio
             </Text>
 
             <View style={s.features}>

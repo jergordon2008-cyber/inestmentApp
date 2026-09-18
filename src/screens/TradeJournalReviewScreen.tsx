@@ -100,7 +100,10 @@ export function TradeJournalReviewScreen({
               </View>
               <View style={styles.statBox}>
                 <Text style={[styles.statValue, { color: theme.colors.success }]}>
-                  {(stats.thesisCorrectRate * 100).toFixed(0)}%
+                  {/* getStats() already returns this as a percentage
+                      ((correctTheses / total) * 100), so it is rendered as-is.
+                      Multiplying by 100 again here showed 3-of-5 as "6000%". */}
+                  {stats.thesisCorrectRate.toFixed(0)}%
                 </Text>
                 <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
                   Thesis correct

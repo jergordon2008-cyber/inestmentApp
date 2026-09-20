@@ -24,10 +24,12 @@ import {
   searchStocks as mockSearch,
   getAllSectors,
   getStocksBySector,
+  isLiveQuote,
+  STATIC_SNAPSHOT_DATE,
 } from './stockDataService';
 
 export { getAllSectors, getStocksBySector };
-export { LIVE_DATA_ENABLED };
+export { LIVE_DATA_ENABLED, isLiveQuote };
 
 /**
  * Fetch a single stock. Returns null if symbol unknown.
@@ -86,10 +88,55 @@ export function getStockSync(symbol: string): Stock | null {
 }
 
 /**
- * Get a data source label for UI display. Prices can be cached up to 15
- * minutes per device (see finnhubAdapter's CACHE_TTL_MS), so this is
- * disclosed as delayed rather than real-time.
+ * Data-source label for the price a screen is actually showing.
+ *
+ * Pass the Stock being rendered. The label is derived from that stock's own
+ * lastUpdated, so a symbol that fell back to the static snapshot is labelled
+ * as such even while other symbols on the same device are live. Called with
+ * no stock it reports loading rather than guessing.
  */
-export function getDataSourceLabel(): string {
-  return LIVE_DATA_ENABLED ? 'Delayed up to 15 min · Finnhub' : 'Simulated prices';
+export function getDataSourceLabel(stock?: Stock | null): string {
+  if (!LIVE_DATA_ENABLED) return 'Simulated prices';
+  if (!stock) return 'Loading price…';
+
+  // A key being configured says nothing about THIS symbol. When a quote
+  // didn't land (rate limit, network error, empty ticker) the stock carries
+  // the January static snapshot, and the label has to say so — the old
+  // version printed "Delayed up to 15 min · Finnhub" over snapshot prices.
+  if (!isLiveQuote(stock)) return `Not live · static snapshot, ${formatSnapshotDate()}`;
+
+  return `Finnhub quote · ${formatQuoteAge(stock.lastUpdated)}`;
+}
+
+function formatSnapshotDate(): string {
+  // Forced to UTC: the constant is UTC midnight, so formatting it in a
+  // behind-UTC local zone rendered "Jan 14" for a Jan 15 snapshot.
+  return new Date(STATIC_SNAPSHOT_DATE).toLocaleDateString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC',
+  });
+}
+
+/**
+ * Age of the quote itself, from Finnhub's own timestamp — not the time we
+ * fetched it. Quotes are cached per device for up to 15 minutes and the
+ * exchange timestamp stops advancing when the market closes, so over a
+ * weekend this correctly reads "2 d ago" instead of implying freshness.
+ */
+function formatQuoteAge(lastUpdated: string): string {
+  const ms = Date.now() - new Date(lastUpdated).getTime();
+  if (!Number.isFinite(ms)) return 'time unknown';
+  if (ms < 60_000) return 'moments ago';
+
+  const min = Math.floor(ms / 60_000);
+  if (min < 60) return `${min} min ago`;
+
+  const hours = Math.floor(min / 60);
+  if (hours < 24) return `${hours} h ago`;
+
+  const days = Math.floor(hours / 24);
+  // Past a week, an absolute date is more useful than a growing day count.
+  if (days > 7) {
+    return new Date(lastUpdated).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+  return `${days} d ago`;
 }

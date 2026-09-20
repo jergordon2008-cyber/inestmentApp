@@ -125,7 +125,7 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
           </View>
 
           <Text style={[s.mcapLabel, { color: theme.colors.textTertiary, marginTop: -8 }]}>
-            {getDataSourceLabel()}
+            {getDataSourceLabel(stock)}
           </Text>
         </View>
 

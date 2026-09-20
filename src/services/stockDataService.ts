@@ -18,7 +18,33 @@ import { Stock } from '../types';
 // current time on every read would falsely claim they were just fetched.
 // getStock() below overrides this with a real Finnhub timestamp whenever a
 // symbol has actually been live-refreshed (see initializeLivePrices).
-const STATIC_SNAPSHOT_DATE = '2026-01-15T00:00:00.000Z';
+export const STATIC_SNAPSHOT_DATE = '2026-01-15T00:00:00.000Z';
+
+/**
+ * True only when this Stock's price came from a real quote rather than the
+ * static snapshot above.
+ *
+ * `lastUpdated` is the one field that reliably distinguishes the two: the
+ * static rows carry STATIC_SNAPSHOT_DATE verbatim, while both live paths
+ * (mapFinnhubToStock, and getStock() reading _lastLiveUpdate) stamp a real
+ * Finnhub quote timestamp. Anything unparseable, or older than the snapshot
+ * itself, is treated as not-live rather than trusted — a quote.t of 0 would
+ * otherwise map to 1970 and read as a real, extremely old quote.
+ *
+ * This answers "did a live quote land for THIS symbol", which is not the same
+ * question as "is a Finnhub key configured". A key can be present while an
+ * individual symbol falls back to the snapshot (rate limit, network error,
+ * unknown ticker), which is exactly when a UI must not claim live data.
+ *
+ * Note this speaks only to price. P/E, EPS, dividend yield, market cap and the
+ * 52-week range are never refreshed by initializeLivePrices, so on a Stock
+ * from getStock() those stay January-static even when this returns true.
+ */
+export function isLiveQuote(stock: Stock | null | undefined): boolean {
+  if (!stock?.lastUpdated || stock.lastUpdated === STATIC_SNAPSHOT_DATE) return false;
+  const t = new Date(stock.lastUpdated).getTime();
+  return Number.isFinite(t) && t > new Date(STATIC_SNAPSHOT_DATE).getTime();
+}
 
 // ============================================================================
 // MOCK STOCK DATABASE (Tier 1 approved blue chips)

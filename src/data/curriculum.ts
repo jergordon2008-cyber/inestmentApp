@@ -201,13 +201,13 @@ export const tier1Lessons: Lesson[] = [
         id: 'T1L02S6',
         type: 'text',
         title: 'Dollar-cost averaging: the only timing strategy that works',
-        content: 'Nobody knows when the market will be highest or lowest. Dollar-cost averaging (DCA) sidesteps this problem entirely: invest a fixed dollar amount on a fixed schedule, regardless of price. Example: $500 every month into VOO, an S&P 500 ETF. When prices are high, you buy fewer shares. When prices crash (which WILL happen), you automatically buy more shares at the discount. Over 20 years, DCA consistently outperforms trying to time the market for ~90% of investors — and it requires no skill, no analysis, and about 10 minutes per year.',
+        content: 'Nobody knows when the market will be highest or lowest. Dollar-cost averaging (DCA) sidesteps this problem entirely: invest a fixed dollar amount on a fixed schedule, regardless of price. Example: $500 every month into VOO, an S&P 500 ETF. When prices are high, you buy fewer shares. When prices crash (which WILL happen), you automatically buy more shares at the discount. You never have to guess whether now is the right time to buy — the schedule decides for you — and it requires no skill, no analysis, and about 10 minutes per year.',
       },
       {
         id: 'T1L02S7b',
         type: 'example',
         title: 'Jack Bogle\'s radical idea — and why it works',
-        content: 'In 1975, Jack Bogle launched the first index fund. Wall Street laughed. Why would anyone settle for "just average" returns? His argument: most actively managed funds underperform the market after fees. And those fees — even 1% per year — compound into enormous losses over decades.\n\nBogle\'s math: on a $100K investment over 30 years at 7% growth, a 1% annual fee costs you $128,000 in total wealth compared to a 0.05% index fund fee. You don\'t lose 1%. You lose 128K.\n\nToday Vanguard manages over $8 trillion using Bogle\'s philosophy. His core rule: "Don\'t do something, just stand there." The enemy of long-term returns is not the market — it\'s fees and unnecessary trading.',
+        content: 'In 1975, Jack Bogle launched the first index fund. Wall Street laughed. Why would anyone settle for "just average" returns? His argument: most actively managed funds underperform the market after fees. And those fees — even 1% per year — compound into enormous losses over decades.\n\nBogle\'s math: on a $100K investment over 30 years at 7% growth, a 1% annual fee costs you $176,277 in total wealth compared to a 0.05% index fund fee. You don\'t lose 1%. You lose $176K.\n\nToday Vanguard manages over $8 trillion using Bogle\'s philosophy. His core rule: "Don\'t do something, just stand there." The enemy of long-term returns is not the market — it\'s fees and unnecessary trading.',
       },
       {
         id: 'T1L02S7',
@@ -996,7 +996,7 @@ export const tier1Lessons: Lesson[] = [
         id: 'T1L09S3',
         type: 'example',
         title: 'Step 3: Use the trade journal',
-        content: 'When you tap Buy, you\'ll be required to write two short notes: why you\'re buying, and what your exit plan is. This is THE most important habit. Studies show traders who articulate their thesis before buying outperform those who don\'t — because they\'ve actually thought about it. Skip this and you\'re gambling. Write it down and you\'re investing.',
+        content: 'When you tap Buy, you\'ll be required to write two short notes: why you\'re buying, and what your exit plan is. This is THE most important habit. Writing your thesis down forces you to actually think it through before you commit money — if you can\'t explain why in a sentence, you probably don\'t know why. Skip this and you\'re gambling. Write it down and you\'re investing.',
       },
       {
         id: 'T1L09S4',

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, ScrollView,
   TouchableOpacity, Pressable,
@@ -8,13 +8,20 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '../context/ThemeContext';
 import { useUserStore } from '../services/userStore';
 import { usePortfolioStore } from '../services/portfolioStore';
-import { getStockSync } from '../services/marketDataFacade';
+import { getStockSync, fetchStock, isLiveQuote, LIVE_DATA_ENABLED } from '../services/marketDataFacade';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { TradeType, Trade } from '../types';
 import { BehaviorCoachModal, BehaviorBias } from '../components/BehaviorCoachModal';
 import { Ionicons } from '@expo/vector-icons';
 import { logEvent } from '../services/analyticsService';
 import { changeCaret, changeColor, changeTone } from '../utils/change';
+
+/**
+ * How far the live price may drift from the price the student was shown and
+ * still fill without asking again. Beyond this we re-quote and require a
+ * second tap, so nobody is filled at a number they never saw.
+ */
+const PRICE_TOLERANCE = 0.005; // 0.5%
 
 interface Props {
   symbol: string;
@@ -30,13 +37,45 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
   const user = useUserStore(s => s.user);
   const portfolio = usePortfolioStore(s => s.portfolio);
   const executeTrade = usePortfolioStore(s => s.executeTrade);
-  const stock = useMemo(() => getStockSync(symbol), [symbol]);
+  // Seeded synchronously so the screen renders immediately, then replaced by
+  // the freshly fetched quote at confirm time. Holding it in state (rather
+  // than a useMemo over getStockSync) is what lets a re-quote update the
+  // displayed price and recompute shares before the student confirms.
+  const [stock, setStock] = useState(() => getStockSync(symbol));
+  useEffect(() => { setStock(getStockSync(symbol)); }, [symbol]);
   const position = portfolio?.positions.find(p => p.symbol === symbol);
 
   const [action, setAction]         = useState<TradeType>(initAction);
   const [mode, setMode]             = useState<'shares' | 'dollars'>('shares');
   const [inputVal, setInputVal]     = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  /**
+   * idle → checking (fetching a fresh quote) → submitting (order going in).
+   * Replaces the old isSubmitting boolean, which only covered the second half.
+   */
+  const [submitPhase, setSubmitPhase] = useState<'idle' | 'checking' | 'submitting'>('idle');
+
+  /**
+   * Why the last confirm attempt did NOT fill.
+   *  - unavailable: no live quote came back. The trade blocks; we never fill
+   *    at the static snapshot price, because that number is written into
+   *    trades[] and cost basis permanently (AAPL's snapshot is ~37% off).
+   *  - moved: the live price differs from what the student was shown by more
+   *    than PRICE_TOLERANCE. We re-quote and make them confirm the new number
+   *    rather than filling at a price they never agreed to.
+   */
+  const [quoteIssue, setQuoteIssue] = useState<
+    null | { kind: 'unavailable' } | { kind: 'moved'; from: number; to: number }
+  >(null);
+
+  // Synchronous re-entrancy lock. submitPhase is React state, so it isn't
+  // visible until the next render — with an await now between the tap and
+  // executeTrade, two fast taps could otherwise both get through and place
+  // two orders. A ref flips immediately.
+  const submitLock = useRef(false);
+
+  // Any change to what's being traded invalidates a pending price warning.
+  useEffect(() => { setQuoteIssue(null); }, [inputVal, action, mode]);
 
   // Behavioral coaching
   const [coachBias, setCoachBias]   = useState<BehaviorBias | null>(null);
@@ -57,7 +96,7 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
   const hasEnoughCash = action === 'buy' ? cash >= totalCost : true;
   const hasEnoughShares = action === 'sell' ? (position?.shares ?? 0) >= shares : true;
   const validShares = shares > 0;
-  const canSubmit = validShares && hasEnoughCash && hasEnoughShares && !isSubmitting;
+  const canSubmit = validShares && hasEnoughCash && hasEnoughShares && submitPhase === 'idle';
 
   const quickAmounts = action === 'buy'
     ? [250, 500, 1000, 2500].map(d => ({ label: `$${d}`, val: String((d / price).toFixed(4)) }))
@@ -65,24 +104,90 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
       ? [0.25, 0.5, 0.75, 1].map(f => ({ label: `${f * 100}%`, val: String((position.shares * f).toFixed(4)) }))
       : [];
 
-  const executeSubmit = async () => {
-    if (!canSubmit || !stock || !user || !portfolio) return;
-    setIsSubmitting(true);
+  /**
+   * Places the order at an explicitly confirmed price.
+   *
+   * fillStock/fillPrice are the freshly fetched quote, not whatever the
+   * screen was showing when it mounted. Shares are recomputed from that same
+   * price so a dollar-mode order still spends the amount the student typed.
+   */
+  const placeOrder = async (fillStock: typeof stock, fillPrice: number, fillShares: number) => {
+    if (!fillStock || !user || !portfolio) return;
+    setSubmitPhase('submitting');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await new Promise(r => setTimeout(r, 400));
-    const result = executeTrade({ symbol, type: action, shares, pricePerShare: price, stock, userTier: user.currentTier, buyReason, exitPlan });
-    setIsSubmitting(false);
+    const result = executeTrade({
+      symbol, type: action, shares: fillShares, pricePerShare: fillPrice,
+      stock: fillStock, userTier: user.currentTier, buyReason, exitPlan,
+    });
     if (result.success) {
       logEvent('trade_submitted', { symbol, side: action, has_thesis: !!buyReason });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showAlert(
         action === 'buy' ? '✅ Order Filled' : '✅ Sold',
-        `${action === 'buy' ? 'Bought' : 'Sold'} ${shares.toFixed(4)} shares of ${symbol} at $${price.toFixed(2)}`,
+        `${action === 'buy' ? 'Bought' : 'Sold'} ${fillShares.toFixed(4)} shares of ${symbol} at $${fillPrice.toFixed(2)}`,
         [{ text: 'Done', onPress: () => onTradeSuccess(result.trade) }]
       );
     } else {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       showAlert('Trade Failed', result.error ?? 'Something went wrong.');
+    }
+  };
+
+  /**
+   * Confirm handler. Re-quotes before filling.
+   *
+   * The price on screen was captured when the screen opened and can be
+   * minutes old by the time the student taps — and if the app booted into a
+   * Finnhub rate limit it may be the January snapshot, which would be written
+   * into cost basis permanently. So: fetch fresh, then decide.
+   *
+   * Failure blocks rather than retrying or falling back. A wrong mark heals on
+   * the next refresh; a wrong execution price never does. Blocking a paper
+   * trade for a few seconds costs nothing real.
+   */
+  const attemptSubmit = async () => {
+    if (submitLock.current) return;           // synchronous double-tap guard
+    if (!canSubmit || !stock || !user || !portfolio) return;
+    submitLock.current = true;
+
+    try {
+      // No API key: the app is a deliberate simulation and snapshot prices
+      // are the intended marks. Nothing to re-quote against.
+      if (!LIVE_DATA_ENABLED) {
+        await placeOrder(stock, price, shares);
+        return;
+      }
+
+      setSubmitPhase('checking');
+      setQuoteIssue(null);
+      const fresh = await fetchStock(symbol);
+
+      // fetchStock never throws and never reports failure — on a rate limit
+      // it hands back the static snapshot. isLiveQuote is what distinguishes
+      // a real quote from that substitute.
+      if (!fresh || !(fresh.price > 0) || !isLiveQuote(fresh)) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        setQuoteIssue({ kind: 'unavailable' });
+        return;
+      }
+
+      const movedBy = Math.abs(fresh.price - price) / price;
+      if (movedBy > PRICE_TOLERANCE) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        setQuoteIssue({ kind: 'moved', from: price, to: fresh.price });
+        setStock(fresh);   // re-quote: price and shares update, student re-confirms
+        return;
+      }
+
+      // Within tolerance — fill at the fresh price, with shares recomputed
+      // from it so the dollar amount the student entered still holds.
+      const typed = parseFloat(inputVal) || 0;
+      const fillShares = mode === 'shares' ? typed : typed / fresh.price;
+      setStock(fresh);
+      await placeOrder(fresh, fresh.price, fillShares);
+    } finally {
+      setSubmitPhase('idle');
+      submitLock.current = false;
     }
   };
 
@@ -108,7 +213,7 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
       }
     }
 
-    executeSubmit();
+    attemptSubmit();
   };
 
   if (!stock || !user || !portfolio) return null;
@@ -127,7 +232,7 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
         lossPercent={position?.unrealizedGainPercent}
         gainPercent={position?.unrealizedGainPercent}
         onHold={() => { setCoachBias(null); setPendingSubmit(false); }}
-        onOverride={() => { setCoachBias(null); setPendingSubmit(false); executeSubmit(); }}
+        onOverride={() => { setCoachBias(null); setPendingSubmit(false); attemptSubmit(); }}
       />
 
       {/* Header */}
@@ -239,6 +344,22 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
 
       {/* Submit */}
       <View style={[s.footer, { backgroundColor: theme.colors.background, borderTopColor: theme.colors.border }]}>
+        {quoteIssue?.kind === 'unavailable' && (
+          <View style={[s.noticeRow, { backgroundColor: theme.colors.danger + '14', borderColor: theme.colors.danger + '40' }]}>
+            <Ionicons name="cloud-offline-outline" size={15} color={theme.colors.danger} />
+            <Text style={[s.noticeText, { color: theme.colors.danger }]}>
+              Couldn't confirm a live price for {symbol}, so this order wasn't placed. Your portfolio is unchanged.
+            </Text>
+          </View>
+        )}
+        {quoteIssue?.kind === 'moved' && (
+          <View style={[s.noticeRow, { backgroundColor: theme.colors.gold + '14', borderColor: theme.colors.gold + '40' }]}>
+            <Ionicons name="trending-up-outline" size={15} color={theme.colors.gold} />
+            <Text style={[s.noticeText, { color: theme.colors.gold }]}>
+              Price moved from ${quoteIssue.from.toFixed(2)} to ${quoteIssue.to.toFixed(2)} before your order went in. Confirm to trade at the new price.
+            </Text>
+          </View>
+        )}
         <TouchableOpacity
           onPress={handleSubmit}
           disabled={!canSubmit}
@@ -248,7 +369,11 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
           }]}
         >
           <Text style={s.submitText}>
-            {isSubmitting ? 'Processing…' : `${action === 'buy' ? 'Buy' : 'Sell'} ${symbol}`}
+            {submitPhase === 'checking'   ? 'Confirming price…'
+             : submitPhase === 'submitting' ? 'Processing…'
+             : quoteIssue?.kind === 'unavailable' ? 'Try again'
+             : quoteIssue?.kind === 'moved' ? `Confirm at $${quoteIssue.to.toFixed(2)}`
+             : `${action === 'buy' ? 'Buy' : 'Sell'} ${symbol}`}
           </Text>
         </TouchableOpacity>
       </View>
@@ -297,6 +422,8 @@ const styles = (theme: any) => StyleSheet.create({
   summaryValue: { fontSize: 13, fontWeight: '700' },
 
   footer: { paddingHorizontal: 20, paddingVertical: 14, paddingBottom: 28, borderTopWidth: 1 },
+  noticeRow:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10 },
+  noticeText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '600' },
   submitBtn: { paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
   submitText: { fontSize: 16, fontWeight: '800', color: '#07070D' },
 });

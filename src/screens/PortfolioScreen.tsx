@@ -7,7 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { usePortfolioStore } from '../services/portfolioStore';
-import { fetchStocks } from '../services/marketDataFacade';
+import { fetchStocks, buildPositionPriceMap } from '../services/marketDataFacade';
 import { AnimatedPressable } from '../components/AnimatedPressable';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { CompanyLogo } from '../components/CompanyLogo';
@@ -58,8 +58,9 @@ export function PortfolioScreen({ onBack, onStockPress, onBrowsePress, embedded,
     setRefreshing(true);
     const syms   = portfolio.positions.map(p => p.symbol);
     const stocks = await fetchStocks(syms);
-    const map    = stocks.reduce((a, s) => ({ ...a, [s.symbol]: s.price }), {} as Record<string, number>);
-    updatePositionPrices(map);
+    // See buildPositionPriceMap: symbols whose quote fell back to the static
+    // snapshot are dropped rather than written over a good mark.
+    updatePositionPrices(buildPositionPriceMap(stocks));
     setRefreshing(false);
   };
 

@@ -89,6 +89,41 @@ export function getStockSync(symbol: string): Stock | null {
 }
 
 /**
+ * Builds the symbol→price map that updatePositionPrices() writes into saved
+ * positions, dropping any symbol whose quote did not actually come back live.
+ *
+ * Why this filter has to exist at all: getLiveStock() answers a rate limit or
+ * a bad quote by returning the static January snapshot with no error and no
+ * marker, so fetchStocks() hands back a well-formed array silently mixing
+ * real and snapshot prices. Writing those marked AAPL at its January $211.45
+ * against a live $336.13 — a fabricated 37% loss on a winning position,
+ * stamped with a fresh lastUpdatedAt and synced to Firestore.
+ *
+ * A position's currentPrice/currentValue/unrealizedGain are only a cache of
+ * derived display state; shares/averageCost/totalCost are the real record and
+ * are never touched here. So the correct response to a failed fetch is to
+ * leave the previous mark standing — updatePositionPrices() already skips any
+ * symbol missing from the map. Omission is the whole mechanism.
+ *
+ * The filter applies ONLY when live data is expected. With no Finnhub key the
+ * app is a deliberate simulation and snapshot prices are the intended marks,
+ * so everything passes through.
+ *
+ * Note this is not merely cosmetic: totalValue feeds the Tier 1 20% position
+ * limit in executeTrade(), and is published to public_stats, which backs the
+ * leaderboard and classroom roster. A bad mark escapes the device.
+ */
+export function buildPositionPriceMap(stocks: Stock[]): Record<string, number> {
+  const map: Record<string, number> = {};
+  for (const stock of stocks) {
+    if (!stock || !(stock.price > 0)) continue;
+    if (LIVE_DATA_ENABLED && !isLiveQuote(stock)) continue;
+    map[stock.symbol] = stock.price;
+  }
+  return map;
+}
+
+/**
  * Data-source label for the price a screen is actually showing.
  *
  * Pass the Stock being rendered. The label is derived from that stock's own

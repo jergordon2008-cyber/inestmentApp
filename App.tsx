@@ -7,7 +7,7 @@ import { showAlert } from './src/utils/alert';
 import { useUserStore, createNewUser } from './src/services/userStore';
 import { usePortfolioStore } from './src/services/portfolioStore';
 import { useSubscriptionStore } from './src/services/subscriptionStore';
-import { fetchStocks } from './src/services/marketDataFacade';
+import { fetchStocks, buildPositionPriceMap } from './src/services/marketDataFacade';
 import { OnboardingAnswers } from './src/data/onboarding';
 
 import { subscribeToAuthChanges, signOutUser } from './src/services/authService';
@@ -198,8 +198,11 @@ function AppContent() {
       if (!portfolio?.positions.length) return;
       const syms = portfolio.positions.map(p => p.symbol);
       const stocks = await fetchStocks(syms);
-      const map = stocks.reduce((a, s) => ({ ...a, [s.symbol]: s.price }), {} as Record<string, number>);
-      updatePositionPrices(map);
+      // Only symbols that came back with a real quote. A rate-limited fetch
+      // returns the January snapshot price, and writing that into a saved
+      // position fabricates a loss that syncs to Firestore and the
+      // leaderboard. Omitted symbols keep their previous mark.
+      updatePositionPrices(buildPositionPriceMap(stocks));
     };
     refresh();
     const interval = setInterval(refresh, 60_000);

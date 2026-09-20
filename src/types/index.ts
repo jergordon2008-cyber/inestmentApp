@@ -148,6 +148,19 @@ export interface Stock {
   eps?: number;
   beta?: number;
 
+  /**
+   * When the fundamentals above were measured — deliberately separate from
+   * lastUpdated, which is the PRICE timestamp.
+   *
+   * The two drift apart: initializeLivePrices() refreshes price and previous
+   * close from Finnhub but never touches marketCap/peRatio/dividendYield/eps,
+   * so a Stock routinely carries a live price beside months-old fundamentals.
+   * Anything rendering or reasoning over a fundamental must consult this, not
+   * lastUpdated. Undefined means no fundamentals are attached (the live
+   * adapter leaves them out rather than backfilling from the snapshot).
+   */
+  fundamentalsAsOf?: string;
+
   // Range
   dayLow: number;
   dayHigh: number;

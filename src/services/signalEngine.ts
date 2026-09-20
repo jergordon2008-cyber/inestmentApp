@@ -19,12 +19,28 @@
  */
 
 import { Signal, SignalType, Stock, Tier } from '../types';
-import { getAllTier1Stocks, getStocksBySector, getAllSectors, getStock } from './stockDataService';
+import {
+  getAllTier1Stocks, getStocksBySector, getAllSectors, getStock,
+  areFundamentalsStale, formatAsOfDate,
+} from './stockDataService';
 import { getEarningsSurprises } from './finnhubAdapter';
 
 // ============================================================================
 // SIGNAL GENERATORS
 // ============================================================================
+
+/**
+ * Trailing " (fundamentals as of 15 Jan 2026)" for copy that quotes a
+ * fundamental, or '' when the figures are current enough to state plainly.
+ *
+ * Every Stock from getStock() carries snapshot-dated fundamentals today
+ * (initializeLivePrices refreshes price only), so this is non-empty in
+ * practice. It empties itself once fundamentals are fetched for real.
+ */
+function asOfSuffix(stock: Stock): string {
+  if (!areFundamentalsStale(stock) || !stock.fundamentalsAsOf) return '';
+  return ` (fundamentals as of ${formatAsOfDate(stock.fundamentalsAsOf)})`;
+}
 
 /**
  * Generate blue-chip quality signals
@@ -56,7 +72,13 @@ function generateBlueChipSignals(stocks: Stock[]): Signal[] {
     category: 'quality' as const,
     symbol: stock.symbol,
     title: 'Blue-chip quality',
-    description: `${stock.name} is a proven leader with $${(stock.marketCap / 1e9).toFixed(0)}B market cap and stable fundamentals.`,
+    // The market-cap figure comes from the static snapshot and is dated
+    // in the copy rather than suppressed: "blue chip" is a claim about
+    // durable company size and quality, which doesn't turn over in a
+    // quarter the way a dividend yield does. The date is part of the
+    // lesson — fundamentals have a vintage — and disappears on its own
+    // once fundamentals are fetched fresh.
+    description: `${stock.name} is a proven leader with a $${(stock.marketCap / 1e9).toFixed(0)}B market cap and stable fundamentals${asOfSuffix(stock)}.`,
     strength: stock.marketCap > 1_000_000_000_000 ? 'strong' as const : 'moderate' as const,
     relatedLessonId: 'T1L06', // Blue-chip stocks explained
     educationalMessage: `When you buy a blue-chip stock like ${stock.symbol}, you're owning a piece of a battle-tested company. They've survived recessions, wars, and disruption — and they're still here.`,
@@ -164,10 +186,30 @@ async function generateEarningsSurpriseSignal(symbol: string): Promise<Signal | 
 }
 
 /**
- * Generate dividend consistency signals
+ * Generate dividend consistency signals.
+ *
+ * Suppressed outright while the yield is stale, rather than dated like the
+ * blue-chip signal. Three reasons this one can't carry a disclosure:
+ *
+ *  1. It states forward income in dollars — "$6.12 per $100 invested, every
+ *     year". That is the kind of sentence a student acts on, and an "as of"
+ *     note doesn't make a wrong number safe to act on.
+ *  2. Yield moves inversely to price, and the price beside it IS live. A
+ *     stale yield is therefore wrong in the direction that matters: it
+ *     overstates income on everything that has since risen.
+ *  3. The 1.5–7% filter exists to screen out yield traps. Run on stale
+ *     inputs it does the opposite — a stock whose yield has since blown past
+ *     7% (price collapsed) still reads as a "reliable dividend payer".
+ *
+ * Returning [] here is the whole mechanism. When fundamentals are fetched
+ * for real, fundamentalsAsOf becomes current and these signals come back
+ * with no further change.
  */
 function generateDividendSignals(stocks: Stock[]): Signal[] {
-  const candidates = stocks.filter(s => 
+  const fresh = stocks.filter(s => !areFundamentalsStale(s));
+  if (fresh.length === 0) return [];
+
+  const candidates = fresh.filter(s =>
     s.dividendYield && s.dividendYield > 1.5 && s.dividendYield < 7 // Avoid yield traps
   );
   

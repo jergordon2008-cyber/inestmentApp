@@ -16,12 +16,13 @@
  * fast path, with Firestore as the durable, cross-device source of truth.
  */
 import {
-  doc, getDoc, setDoc, collection, getDocs, query, orderBy, limit as fsLimit, where, onSnapshot,
+  doc, getDoc, setDoc, updateDoc, arrayUnion, writeBatch,
+  collection, getDocs, query, orderBy, limit as fsLimit, where, onSnapshot,
 } from 'firebase/firestore';
 import { getFirebaseDb } from './firebase';
 import { User, Portfolio } from '../types';
 import { JournalEntry } from './tradeJournalStore';
-import type { Classroom } from './classroomStore';
+import type { Classroom, ClassMember, Assignment, Announcement } from './classroomStore';
 
 function db() {
   const d = getFirebaseDb();
@@ -164,11 +165,30 @@ export async function adminLoadJournal(uid: string): Promise<JournalEntry[]> {
 }
 
 // ── Classrooms ───────────────────────────────────────────────────────────────
+// Every write here is field-scoped (updateDoc / arrayUnion) rather than a
+// whole-document setDoc, for two reasons:
+//   1. Concurrent writers never overwrite each other's fields — two students
+//      joining during a live session both land on the roster.
+//   2. firestore.rules checks exactly which keys a write touches, so a
+//      stale local copy can't silently rewrite the roster or teacher list.
+// The only whole-document write is the create, batched with its join-code
+// index entry so both land or neither does.
 
-export async function saveClassroom(classroom: Classroom): Promise<void> {
-  const d = getFirebaseDb();
-  if (!d) return;
-  await setDoc(doc(d, 'classrooms', classroom.id), classroom);
+export class ClassroomCodeTakenError extends Error {
+  constructor(code: string) { super(`Classroom code ${code} is already in use`); this.name = 'ClassroomCodeTakenError'; }
+}
+
+/** Creates classrooms/{id} and classroom_codes/{code} atomically. */
+export async function createClassroomWithCode(classroom: Classroom, teacherId: string): Promise<void> {
+  const d = db();
+  const codeRef = doc(d, 'classroom_codes', classroom.code);
+  // Friendly fast path. The real guard is the rule: classroom_codes denies
+  // update, so a racing create on the same code fails at commit instead.
+  if ((await getDoc(codeRef)).exists()) throw new ClassroomCodeTakenError(classroom.code);
+  const batch = writeBatch(d);
+  batch.set(doc(d, 'classrooms', classroom.id), classroom);
+  batch.set(codeRef, { classId: classroom.id, teacherId });
+  await batch.commit();
 }
 
 export async function loadClassroom(id: string): Promise<Classroom | null> {
@@ -178,13 +198,39 @@ export async function loadClassroom(id: string): Promise<Classroom | null> {
   return snap.exists() ? (snap.data() as Classroom) : null;
 }
 
-export async function findClassroomByCode(code: string): Promise<Classroom | null> {
+/** Resolves a join code to a classroom id via the classroom_codes index.
+ *  Readable by any signed-in user; reveals nothing about the roster. */
+export async function lookupClassroomIdByCode(code: string): Promise<string | null> {
   const d = getFirebaseDb();
   if (!d) return null;
-  const q = query(collection(d, 'classrooms'), where('code', '==', code.toUpperCase()));
-  const snap = await getDocs(q);
-  if (snap.empty) return null;
-  return snap.docs[0].data() as Classroom;
+  const snap = await getDoc(doc(d, 'classroom_codes', code));
+  if (!snap.exists()) return null;
+  const classId = snap.data().classId;
+  return typeof classId === 'string' ? classId : null;
+}
+
+/** Appends one member. Touches no other field, so it can never clobber a
+ *  concurrent join. Rule (a) in firestore.rules requires member.id === the
+ *  caller's uid and role 'student'. */
+export async function addClassroomMember(classId: string, member: ClassMember): Promise<void> {
+  await updateDoc(doc(db(), 'classrooms', classId), {
+    memberIds: arrayUnion(member.id),
+    members: arrayUnion(member),
+  });
+}
+
+export async function appendAssignment(classId: string, assignment: Assignment): Promise<void> {
+  await updateDoc(doc(db(), 'classrooms', classId), { assignments: arrayUnion(assignment) });
+}
+
+export async function appendAnnouncement(classId: string, announcement: Announcement): Promise<void> {
+  await updateDoc(doc(db(), 'classrooms', classId), { announcements: arrayUnion(announcement) });
+}
+
+/** Replaces the assignments array (used for Mark Complete, which edits an
+ *  element in place — arrayUnion can't express that). */
+export async function replaceAssignments(classId: string, assignments: Assignment[]): Promise<void> {
+  await updateDoc(doc(db(), 'classrooms', classId), { assignments });
 }
 
 export async function listClassroomsForUser(uid: string): Promise<Classroom[]> {

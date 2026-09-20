@@ -25,6 +25,7 @@ import {
   getAllSectors,
   getStocksBySector,
   isLiveQuote,
+  formatAsOfDate,
   STATIC_SNAPSHOT_DATE,
 } from './stockDataService';
 
@@ -109,11 +110,10 @@ export function getDataSourceLabel(stock?: Stock | null): string {
 }
 
 function formatSnapshotDate(): string {
-  // Forced to UTC: the constant is UTC midnight, so formatting it in a
-  // behind-UTC local zone rendered "Jan 14" for a Jan 15 snapshot.
-  return new Date(STATIC_SNAPSHOT_DATE).toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC',
-  });
+  // Shared with the signal engine's "as of" copy so the two can't drift.
+  // formatAsOfDate forces UTC; local formatting rendered the UTC-midnight
+  // constant as "Jan 14" for a Jan 15 snapshot.
+  return formatAsOfDate(STATIC_SNAPSHOT_DATE);
 }
 
 /**

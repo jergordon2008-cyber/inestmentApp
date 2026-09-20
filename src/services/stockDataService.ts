@@ -40,6 +40,39 @@ export const STATIC_SNAPSHOT_DATE = '2026-01-15T00:00:00.000Z';
  * 52-week range are never refreshed by initializeLivePrices, so on a Stock
  * from getStock() those stay January-static even when this returns true.
  */
+/**
+ * One reporting quarter. Past this, a fundamental (P/E, EPS, dividend yield,
+ * market cap) has had at least one earnings report to move it and can no
+ * longer be presented as current.
+ */
+export const FUNDAMENTALS_MAX_AGE_DAYS = 90;
+
+/**
+ * True when a Stock's fundamentals are too old to state as fact — including
+ * when their vintage is unknown, since an unattributable number is not
+ * something to publish either.
+ *
+ * Distinct from isLiveQuote(): that asks about price. A Stock from getStock()
+ * routinely has a live price AND stale fundamentals.
+ */
+export function areFundamentalsStale(stock: Stock | null | undefined): boolean {
+  if (!stock?.fundamentalsAsOf) return true;
+  const t = new Date(stock.fundamentalsAsOf).getTime();
+  if (!Number.isFinite(t)) return true;
+  return Date.now() - t > FUNDAMENTALS_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+}
+
+/**
+ * Renders an ISO date for "as of" disclosure copy. Forced to UTC: the
+ * snapshot constant is UTC midnight, and local formatting in a behind-UTC
+ * zone renders it a day early.
+ */
+export function formatAsOfDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC',
+  });
+}
+
 export function isLiveQuote(stock: Stock | null | undefined): boolean {
   if (!stock?.lastUpdated || stock.lastUpdated === STATIC_SNAPSHOT_DATE) return false;
   const t = new Date(stock.lastUpdated).getTime();
@@ -309,6 +342,14 @@ export function getStock(symbol: string): Stock | null {
     // live-refreshed; otherwise the honest static snapshot date — never
     // Date.now(), which would claim a simulated price just came in live.
     lastUpdated: _lastLiveUpdate[symbol.toUpperCase()] ?? base.lastUpdated,
+    // The fundamentals spread in from `base` above (marketCap, peRatio, eps,
+    // dividendYield, beta, yearLow/High) are ALWAYS from the static snapshot:
+    // initializeLivePrices only writes price and previousClose, so no live
+    // fetch ever updates them. Stamp that vintage explicitly so callers can
+    // tell a live price from stale fundamentals on the same object. When
+    // fundamentals are eventually fetched for real, set this to the fetch
+    // time and everything gated on areFundamentalsStale() resumes on its own.
+    fundamentalsAsOf: base.fundamentalsAsOf ?? STATIC_SNAPSHOT_DATE,
   };
 }
 

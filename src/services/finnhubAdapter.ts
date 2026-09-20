@@ -279,5 +279,13 @@ function mapFinnhubToStock(
     beta: undefined,
     yearLow: undefined,
     yearHigh: undefined,
+
+    // No fundamentals were fetched, so there is no vintage to claim. Left
+    // undefined rather than borrowing the snapshot's date, which would date
+    // numbers this object doesn't carry. areFundamentalsStale() treats
+    // undefined as stale, so nothing downstream states a fundamental it
+    // can't attribute. marketCap above is the one exception: it comes from
+    // the live profile when present, and only falls back to the mock's 0.
+    fundamentalsAsOf: undefined,
   };
 }

@@ -74,10 +74,16 @@ export function HomeScreen({
   const nextLesson = useMemo(() =>
     ALL_LESSONS.find(l => !user?.lessonsCompleted.includes(l.id)), [user]);
 
-  const totalValue     = portfolio?.totalValue ?? 100000;
+  // portfolio is null until initializePortfolio() (end of onboarding) or
+  // setPortfolio() (Firestore load on sign-in/session-restore) actually
+  // populates it. `?? 100000` used to paper over that gap with a fake full
+  // starting balance — visually identical to a real $100,000 portfolio, so
+  // a loading student and a genuinely fresh one were indistinguishable.
+  const portfolioReady = !!portfolio;
+  const totalValue     = portfolio?.totalValue ?? 0;
   const totalReturn    = portfolio?.totalReturn ?? 0;
   const totalReturnPct = portfolio?.totalReturnPercent ?? 0;
-  const cash           = portfolio?.currentCash ?? 100000;
+  const cash           = portfolio?.currentCash ?? 0;
   const perf           = changeColor(totalReturn, theme);
   const returnCaret    = changeCaret(totalReturn);
 
@@ -138,35 +144,50 @@ export function HomeScreen({
                 TOTAL PORTFOLIO VALUE
               </Text>
 
-              <View style={s.heroValueRow}>
-                <Text style={[s.heroCurrency, { color: theme.colors.textSecondary }]}>$</Text>
-                <AnimatedNumber
-                  value={totalValue}
-                  formatter={n => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  duration={1000}
-                  delay={150}
-                  style={[s.heroValue, { color: theme.colors.textPrimary }]}
-                />
-              </View>
+              {portfolioReady ? (
+                <>
+                  <View style={s.heroValueRow}>
+                    <Text style={[s.heroCurrency, { color: theme.colors.textSecondary }]}>$</Text>
+                    <AnimatedNumber
+                      value={totalValue}
+                      formatter={n => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      duration={1000}
+                      delay={150}
+                      style={[s.heroValue, { color: theme.colors.textPrimary }]}
+                    />
+                  </View>
 
-              <View style={s.heroChips}>
-                <View style={[s.chip, { backgroundColor: perf + '18' }]}>
-                  {returnCaret && <Ionicons name={returnCaret} size={fs(11)} color={perf} />}
-                  <Text style={[s.chipText, { color: perf }]}>
-                    {changeSign(totalReturn)}${Math.abs(totalReturn).toFixed(2)}
-                  </Text>
-                  <Text style={[s.chipSub, { color: perf + 'BB' }]}>
-                    ({changeSign(totalReturnPct)}{totalReturnPct.toFixed(2)}%)
-                  </Text>
+                  <View style={s.heroChips}>
+                    <View style={[s.chip, { backgroundColor: perf + '18' }]}>
+                      {returnCaret && <Ionicons name={returnCaret} size={fs(11)} color={perf} />}
+                      <Text style={[s.chipText, { color: perf }]}>
+                        {changeSign(totalReturn)}${Math.abs(totalReturn).toFixed(2)}
+                      </Text>
+                      <Text style={[s.chipSub, { color: perf + 'BB' }]}>
+                        ({changeSign(totalReturnPct)}{totalReturnPct.toFixed(2)}%)
+                      </Text>
+                    </View>
+                    <View style={[s.chip, { backgroundColor: theme.colors.surfaceMuted }]}>
+                      <Ionicons name="cash-outline" size={fs(13)} color={theme.colors.textTertiary} />
+                      <Text style={[s.chipText, { color: theme.colors.textSecondary }]}>
+                        ${cash.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                      </Text>
+                      <Text style={[s.chipSub, { color: theme.colors.textTertiary }]}>cash</Text>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                // portfolio hasn't loaded (or been created) yet — a placeholder
+                // shape, not a number. Sized to roughly match the real content
+                // so the card doesn't visibly jump once data arrives.
+                <View accessibilityLabel="Loading portfolio value">
+                  <View style={[s.skeletonBlock, { width: '58%', height: fs(50), borderRadius: 10, backgroundColor: theme.colors.shimmer, marginBottom: sp(16) }]} />
+                  <View style={s.heroChips}>
+                    <View style={[s.skeletonBlock, { width: 110, height: 30, borderRadius: 22, backgroundColor: theme.colors.shimmer }]} />
+                    <View style={[s.skeletonBlock, { width: 90, height: 30, borderRadius: 22, backgroundColor: theme.colors.shimmer }]} />
+                  </View>
                 </View>
-                <View style={[s.chip, { backgroundColor: theme.colors.surfaceMuted }]}>
-                  <Ionicons name="cash-outline" size={fs(13)} color={theme.colors.textTertiary} />
-                  <Text style={[s.chipText, { color: theme.colors.textSecondary }]}>
-                    ${cash.toLocaleString('en-US', { maximumFractionDigits: 0 })}
-                  </Text>
-                  <Text style={[s.chipSub, { color: theme.colors.textTertiary }]}>cash</Text>
-                </View>
-              </View>
+              )}
 
               <View style={[s.heroCTA, { borderTopColor: theme.colors.border }]}>
                 <Text style={[s.heroCTAText, { color: theme.colors.textTertiary }]}>
@@ -405,6 +426,7 @@ const s = StyleSheet.create({
   heroCurrency: { fontSize: fs(20), fontWeight: '700', marginTop: sp(6), marginRight: 2 },
   heroValue:    { fontSize: fs(50), fontWeight: '800', letterSpacing: -2, lineHeight: fs(56) },
   heroChips:    { flexDirection: 'row', gap: sp(8), marginBottom: sp(16), flexWrap: 'wrap' },
+  skeletonBlock:{ marginRight: sp(8) },
   chip:         { flexDirection: 'row', alignItems: 'center', gap: sp(4), paddingHorizontal: sp(10), paddingVertical: sp(7), borderRadius: 22 },
   chipText:     { fontSize: fs(13), fontWeight: '700' },
   chipSub:      { fontSize: fs(12), fontWeight: '500' },

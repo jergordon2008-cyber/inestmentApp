@@ -218,13 +218,25 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={[s.studentName, { color: theme.colors.textPrimary }]}>{m.name}</Text>
+                        {/* portfolioValue/portfolioReturn are only ever written together, by
+                            refreshMembers() pulling this member's public_stats doc — a student
+                            who joined but never triggered a public_stats sync has both undefined
+                            forever, not zero. `?? 100000` used to render a fake full starting
+                            balance for that student, indistinguishable from someone who'd
+                            actually verified at $100,000. Say plainly that it isn't known yet. */}
                         <Text style={[s.studentMeta, { color: theme.colors.textTertiary }]}>
-                          ${(m.portfolioValue ?? 100000).toLocaleString()} · {m.lessonsCompleted ?? 0} lessons
+                          {m.portfolioValue != null
+                            ? `$${m.portfolioValue.toLocaleString()} · ${m.lessonsCompleted ?? 0} lessons`
+                            : `Not synced yet · ${m.lessonsCompleted ?? 0} lessons`}
                         </Text>
                       </View>
-                      <Text style={[s.studentMeta, { color: changeColor(m.portfolioReturn, theme), fontWeight: '700' }]}>
-                        {changeSign(m.portfolioReturn)}{(m.portfolioReturn ?? 0).toFixed(1)}%
-                      </Text>
+                      {m.portfolioReturn != null ? (
+                        <Text style={[s.studentMeta, { color: changeColor(m.portfolioReturn, theme), fontWeight: '700' }]}>
+                          {changeSign(m.portfolioReturn)}{m.portfolioReturn.toFixed(1)}%
+                        </Text>
+                      ) : (
+                        <Text style={[s.studentMeta, { color: theme.colors.textTertiary, fontWeight: '700' }]}>—</Text>
+                      )}
                     </View>
                   ))}
               </>

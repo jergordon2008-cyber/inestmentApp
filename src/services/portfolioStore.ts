@@ -59,6 +59,32 @@ const TIER_1_APPROVED_SYMBOLS = [
   'SPY', 'VOO', 'VTI', 'QQQ', // ETFs allowed too
 ];
 
+/**
+ * Derives totalValue/totalReturn/totalReturnPercent from currentCash and the
+ * sum of each position's own currentValue — never from a stored totalValue
+ * field. This is the one place those three numbers get computed; every path
+ * that produces a Portfolio (a fresh one, one loaded from Firestore, one
+ * after a trade, one after a price refresh) runs through it, so the
+ * portfolio-level total can't independently drift from what it's actually
+ * made of. Before this, initializePortfolio/executeTrade/updatePositionPrices
+ * each hand-rolled the same formula separately, and setPortfolio() (the
+ * Firestore-load path) didn't recompute at all — it trusted whatever
+ * totalValue happened to be stored, even if it no longer matched cash +
+ * positions (a partial write, a manual data fix, a bug in a past version).
+ *
+ * Does NOT touch position.currentValue itself — that's the live-price
+ * concern (see marketDataFacade.buildPositionPriceMap) — only re-sums
+ * whatever is already on each position, so the portfolio-level total always
+ * agrees with its own positions even when neither has been refreshed yet.
+ */
+function withRecomputedTotals(portfolio: Portfolio): Portfolio {
+  const positionsValue = portfolio.positions.reduce((sum, p) => sum + p.currentValue, 0);
+  const totalValue = portfolio.currentCash + positionsValue;
+  const totalReturn = totalValue - portfolio.initialCash;
+  const totalReturnPercent = portfolio.initialCash > 0 ? (totalReturn / portfolio.initialCash) * 100 : 0;
+  return { ...portfolio, totalValue, totalReturn, totalReturnPercent };
+}
+
 export const usePortfolioStore = create<PortfolioState>()(
   persist(
     (set, get) => ({
@@ -66,7 +92,7 @@ export const usePortfolioStore = create<PortfolioState>()(
 
       initializePortfolio: (userId, initialCash = INITIAL_CASH) => {
         const now = new Date().toISOString();
-        const newPortfolio: Portfolio = {
+        const newPortfolio: Portfolio = withRecomputedTotals({
           id: `portfolio_${Date.now()}`,
           userId,
           name: 'Main Portfolio',
@@ -82,13 +108,14 @@ export const usePortfolioStore = create<PortfolioState>()(
           trades: [],
           createdAt: now,
           updatedAt: now,
-        };
+        });
         set({ portfolio: newPortfolio });
       },
 
-      // Hydrates the store from a full Portfolio object (e.g. loaded from
-      // Firestore on login) instead of creating a fresh one.
-      setPortfolio: (portfolio) => set({ portfolio }),
+      // Hydrates the store from a full Portfolio object — e.g. loaded from
+      // Firestore on sign-in or session restore. Recomputes totals rather
+      // than trusting whatever was stored; see withRecomputedTotals above.
+      setPortfolio: (portfolio) => set({ portfolio: withRecomputedTotals(portfolio) }),
 
       executeTrade: (params): TradeResult => {
         const { portfolio } = get();
@@ -251,22 +278,13 @@ export const usePortfolioStore = create<PortfolioState>()(
           }
         }
 
-        // Recalculate total portfolio value
-        const positionsValue = newPositions.reduce((sum, p) => sum + p.currentValue, 0);
-        const totalValue = newCash + positionsValue;
-        const totalReturn = totalValue - portfolio.initialCash;
-        const totalReturnPercent = (totalReturn / portfolio.initialCash) * 100;
-
-        const updatedPortfolio: Portfolio = {
+        const updatedPortfolio: Portfolio = withRecomputedTotals({
           ...portfolio,
           currentCash: newCash,
           positions: newPositions,
           trades: [...portfolio.trades, trade],
-          totalValue,
-          totalReturn,
-          totalReturnPercent,
           updatedAt: now,
-        };
+        });
 
         set({ portfolio: updatedPortfolio });
         return { success: true, trade };
@@ -295,20 +313,12 @@ export const usePortfolioStore = create<PortfolioState>()(
           };
         });
 
-        const positionsValue = updatedPositions.reduce((sum, p) => sum + p.currentValue, 0);
-        const totalValue = portfolio.currentCash + positionsValue;
-        const totalReturn = totalValue - portfolio.initialCash;
-        const totalReturnPercent = (totalReturn / portfolio.initialCash) * 100;
-
         set({
-          portfolio: {
+          portfolio: withRecomputedTotals({
             ...portfolio,
             positions: updatedPositions,
-            totalValue,
-            totalReturn,
-            totalReturnPercent,
             updatedAt: now,
-          },
+          }),
         });
       },
 

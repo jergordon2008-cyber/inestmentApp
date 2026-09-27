@@ -14,6 +14,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Portfolio, Position, Trade, TradeType, Stock, Tier } from '../types';
+import { stockDatabase } from './stockDataService';
 
 interface PortfolioState {
   portfolio: Portfolio | null;
@@ -53,14 +54,46 @@ const TIER_1_MIN_HOLD_DAYS = 14; // 2 weeks
 // Exported so the stock browser can show Tier 1 students exactly what they're
 // allowed to trade, instead of all 110 symbols — browsing to a stock only to
 // be refused at the buy screen, and 110 quote requests where 44 would do.
+//
+// Every symbol here MUST have a stockDataService.stockDatabase entry (see the
+// assertStockDataConsistency() check below). BRK.B, PG, ABBV, AVGO, CSCO, IBM
+// and F were removed 2026-09 — they were approved to trade but had no
+// database row, so the stock browser couldn't show them (filtered out by the
+// intersection in marketDataFacade.fetchBrowsableStocks) and TradeScreen
+// rendered blank for any of them (getStockSync returns null, early-return).
+// Re-add a symbol here only alongside a real stockDatabase entry for it —
+// see the fabrication-audit standing rule against invented data.
 export const TIER_1_APPROVED_SYMBOLS = [
   'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA',
-  'BRK.B', 'JNJ', 'V', 'WMT', 'JPM', 'PG', 'MA', 'HD', 'CVX',
-  'KO', 'PEP', 'MRK', 'ABBV', 'PFE', 'TMO', 'COST', 'AVGO',
-  'NKE', 'MCD', 'CSCO', 'DIS', 'ADBE', 'NFLX', 'INTC', 'CMCSA',
-  'XOM', 'BAC', 'UNH', 'VZ', 'T', 'IBM', 'GE', 'F',
+  'JNJ', 'V', 'WMT', 'JPM', 'MA', 'HD', 'CVX',
+  'KO', 'PEP', 'MRK', 'PFE', 'TMO', 'COST',
+  'NKE', 'MCD', 'DIS', 'ADBE', 'NFLX', 'INTC', 'CMCSA',
+  'XOM', 'BAC', 'UNH', 'VZ', 'T', 'GE',
   'SPY', 'VOO', 'VTI', 'QQQ', // ETFs allowed too
 ];
+
+/**
+ * Fails fast, at import time, if the allowlist and the database ever drift
+ * apart again. TIER_1_APPROVED_SYMBOLS controls what executeTrade() will
+ * accept; stockDatabase controls what any screen can actually render or
+ * quote. A symbol approved without a database row is invisible to Browse
+ * (filtered out of the intersection) and renders a silent blank on
+ * TradeScreen (getStockSync returns null) — exactly the bug this list of
+ * seven was. Thrown rather than logged so it's caught in development/CI,
+ * not discovered by a student tapping Buy on a stock nothing can render.
+ */
+function assertStockDataConsistency(): void {
+  const missing = TIER_1_APPROVED_SYMBOLS.filter(sym => !stockDatabase[sym]);
+  if (missing.length > 0) {
+    throw new Error(
+      `TIER_1_APPROVED_SYMBOLS contains symbols with no stockDatabase entry: ` +
+      `${missing.join(', ')}. Add a real entry to stockDatabase (never a ` +
+      `placeholder) before approving a symbol for trading, or remove it ` +
+      `from the allowlist.`
+    );
+  }
+}
+assertStockDataConsistency();
 
 /**
  * Derives totalValue/totalReturn/totalReturnPercent from currentCash and the

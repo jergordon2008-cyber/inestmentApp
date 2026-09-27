@@ -18,6 +18,7 @@
 
 import { Stock } from '../types';
 import { LIVE_DATA_ENABLED, getLiveStock, getLiveStocks } from './finnhubAdapter';
+import { TIER_1_APPROVED_SYMBOLS } from './portfolioStore';
 import { 
   getStock as getMockStock, 
   getAllTier1Stocks as getMockTier1,
@@ -61,6 +62,24 @@ export async function fetchAllTier1(): Promise<Stock[]> {
     return getLiveStocks(tier1.map(s => s.symbol));
   }
   return getMockTier1();
+}
+
+/**
+ * Stocks the browse screen should show — and therefore fetch quotes for.
+ *
+ * Tier 1 is capped to the approved blue-chip list that executeTrade actually
+ * enforces (44 symbols), rather than the full static database (110). Two
+ * reasons: a Tier 1 student browsing all 110 could pick a stock and only find
+ * out it was blocked at the buy screen, and each extra symbol is a live quote
+ * request against a 60/min shared key. Tier 2+ isn't gated in executeTrade,
+ * so those students still see everything.
+ */
+export async function fetchBrowsableStocks(userTier: number): Promise<Stock[]> {
+  if (userTier > 1) return fetchAllTier1();
+  const symbols = getMockTier1()
+    .map(s => s.symbol)
+    .filter(sym => TIER_1_APPROVED_SYMBOLS.includes(sym));
+  return fetchStocks(symbols);
 }
 
 /**

@@ -73,6 +73,35 @@ export function formatAsOfDate(iso: string): string {
   });
 }
 
+/**
+ * Shares outstanding, derived from the static snapshot as marketCap ÷ price.
+ *
+ * Deliberately reads the raw stockDatabase row rather than getStock(), whose
+ * price may already be live-patched — dividing a January market cap by a live
+ * price would invent a share count that never existed.
+ *
+ * This exists so market cap can be computed as shares × live price instead of
+ * costing a second API call. Finnhub's /stock/profile2 was being fetched for
+ * all 110 symbols purely to supply marketCap (everything else it returned had
+ * a static fallback already), doubling every fan-out. Market cap is by
+ * definition shares × price, so with the share count held locally the live
+ * quote is enough.
+ *
+ * Honesty note: the share count is January's. Buybacks and issuance move it,
+ * but slowly — a quarter of drift is a fraction of a percent for large caps,
+ * against a price that moves that much in a morning. So "January shares ×
+ * live price" is materially closer to the truth than the frozen January
+ * market cap it replaces, without claiming to be exact.
+ *
+ * Funds carry marketCap 0 in the static table (the existing convention for
+ * "not applicable"), so this returns 0 for them and the convention survives.
+ */
+export function getSharesOutstanding(symbol: string): number {
+  const base = stockDatabase[symbol.toUpperCase()];
+  if (!base || !base.price) return 0;
+  return base.marketCap / base.price;
+}
+
 export function isLiveQuote(stock: Stock | null | undefined): boolean {
   if (!stock?.lastUpdated || stock.lastUpdated === STATIC_SNAPSHOT_DATE) return false;
   const t = new Date(stock.lastUpdated).getTime();

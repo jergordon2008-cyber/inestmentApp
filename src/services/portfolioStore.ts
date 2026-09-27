@@ -50,7 +50,10 @@ const TIER_1_MAX_POSITION_PERCENT = 0.20; // 20% max position
 const TIER_1_MIN_HOLD_DAYS = 14; // 2 weeks
 
 // Approved blue-chip symbols for Tier 1 users
-const TIER_1_APPROVED_SYMBOLS = [
+// Exported so the stock browser can show Tier 1 students exactly what they're
+// allowed to trade, instead of all 110 symbols — browsing to a stock only to
+// be refused at the buy screen, and 110 quote requests where 44 would do.
+export const TIER_1_APPROVED_SYMBOLS = [
   'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA',
   'BRK.B', 'JNJ', 'V', 'WMT', 'JPM', 'PG', 'MA', 'HD', 'CVX',
   'KO', 'PEP', 'MRK', 'ABBV', 'PFE', 'TMO', 'COST', 'AVGO',

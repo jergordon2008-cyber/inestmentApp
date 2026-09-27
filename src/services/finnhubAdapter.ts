@@ -26,7 +26,7 @@
  */
 
 import { Stock } from '../types';
-import { getAllTier1Stocks, getStock as getMockStock } from './stockDataService';
+import { getAllTier1Stocks, getStock as getMockStock, getSharesOutstanding } from './stockDataService';
 
 const FINNHUB_KEY = process.env.EXPO_PUBLIC_FINNHUB_KEY ?? '';
 const FINNHUB_BASE = 'https://finnhub.io/api/v1';
@@ -40,6 +40,114 @@ export const LIVE_DATA_ENABLED = !!FINNHUB_KEY;
 // without needing a shared cache.
 const cache = new Map<string, { data: Stock; fetchedAt: number }>();
 const CACHE_TTL_MS = 15 * 60 * 1000;
+
+// ============================================================================
+// RATE LIMITING
+// ============================================================================
+
+/**
+ * Token bucket in front of every Finnhub call.
+ *
+ * What this replaces: getLiveStocks() fired batches of 10 symbols — 20
+ * simultaneous requests — every 200ms. That is roughly 100 requests/second,
+ * against a documented 30 calls/second ceiling that applies to *every* plan
+ * including paid, and a 60/minute quota on the free tier. A single device
+ * opening the app blew both, which is why 429s were routine and why prices
+ * silently fell back to the January snapshot.
+ *
+ * CAPACITY is the burst allowance: the first CAPACITY requests go straight
+ * out, so a screen that needs a handful of symbols is still instant. After
+ * that the bucket drains to REFILL_PER_MIN, deliberately under the 60/min
+ * free-tier limit to leave room for the earnings and news calls.
+ *
+ * The jitter matters at cohort scale. Without it, 80 devices that opened the
+ * app at the same time (a class starting) would also retry in lockstep and
+ * rebuild the same spike they were throttled for.
+ *
+ * Note this is per device. It fixes the burst shape and keeps one student
+ * inside the quota; it does NOT make 80 students on one shared key fit, since
+ * the quota is per key. That needs a shared server-side layer, which has its
+ * own licensing question — see the rate-limit options memo.
+ */
+// Sized so the WORST rolling minute stays under the 60/min free-tier quota.
+// A token bucket's worst minute is capacity + refill (the full burst, then a
+// minute of refill), so these must sum below 60 — not just the refill rate.
+// 10 + 45 = 55 leaves ~5/min of headroom for earnings and news calls.
+// Measured: 20 + 50 put the first minute at ~70 requests, over the limit.
+const BUCKET_CAPACITY = 10;
+const REFILL_PER_MIN = 45;
+const REFILL_INTERVAL_MS = 60_000 / REFILL_PER_MIN; // ~1333ms per token
+const JITTER_RATIO = 0.4;
+
+let _tokens = BUCKET_CAPACITY;
+let _lastRefill = Date.now();
+
+function refillTokens(): void {
+  const gained = (Date.now() - _lastRefill) / REFILL_INTERVAL_MS;
+  if (gained < 1) return;
+  const whole = Math.floor(gained);
+  _tokens = Math.min(BUCKET_CAPACITY, _tokens + whole);
+  // Advance by exactly what was consumed so partial progress isn't discarded.
+  _lastRefill += whole * REFILL_INTERVAL_MS;
+}
+
+/**
+ * Waiters are queued and served FIFO by a single timer, rather than each
+ * polling on its own backoff.
+ *
+ * The polling version measured 24 requests/minute against a 45/min budget —
+ * 44 symbols took 413 seconds. Every waiter that lost a race slept another
+ * full interval, so it slept straight through the moment the next token
+ * appeared and that token sat unclaimed until somebody happened to wake. One
+ * timer, armed for exactly when the next token is due, wastes nothing.
+ *
+ * The jitter is still there and still matters: it decorrelates *devices*, so
+ * 80 students opening the app at the same time don't refill in lockstep. It
+ * costs no throughput, because refillTokens() advances _lastRefill only by
+ * the tokens it actually granted, so any lateness is credited back on the
+ * next pass.
+ */
+const _waiters: Array<() => void> = [];
+let _pumpScheduled = false;
+
+function pump(): void {
+  _pumpScheduled = false;
+  refillTokens();
+  while (_tokens >= 1 && _waiters.length > 0) {
+    _tokens -= 1;
+    _waiters.shift()!();
+  }
+  if (_waiters.length > 0) schedulePump();
+}
+
+function schedulePump(): void {
+  if (_pumpScheduled) return;
+  _pumpScheduled = true;
+  const sinceRefill = Date.now() - _lastRefill;
+  const msUntilNext = Math.max(0, REFILL_INTERVAL_MS - sinceRefill);
+  const jitter = Math.random() * REFILL_INTERVAL_MS * JITTER_RATIO;
+  setTimeout(pump, msUntilNext + jitter);
+}
+
+function acquireToken(): Promise<void> {
+  refillTokens();
+  // The queue check keeps this FIFO — a late arrival can't jump ahead of
+  // callers already waiting just because a token happens to be free.
+  if (_tokens >= 1 && _waiters.length === 0) {
+    _tokens -= 1;
+    return Promise.resolve();
+  }
+  return new Promise<void>(resolve => {
+    _waiters.push(resolve);
+    schedulePump();
+  });
+}
+
+/** fetch(), gated on the bucket. Cache hits must not call this. */
+async function rateLimitedFetch(url: string): Promise<Response> {
+  await acquireToken();
+  return fetch(url);
+}
 
 // ============================================================================
 // PUBLIC API — mirrors stockDataService interface
@@ -61,29 +169,22 @@ export async function getLiveStock(symbol: string): Promise<Stock | null> {
   }
   
   try {
-    const [quoteRes, profileRes] = await Promise.all([
-      fetch(`${FINNHUB_BASE}/quote?symbol=${symbol}&token=${FINNHUB_KEY}`),
-      fetch(`${FINNHUB_BASE}/stock/profile2?symbol=${symbol}&token=${FINNHUB_KEY}`),
-    ]);
-    
-    if (!quoteRes.ok || !profileRes.ok) {
-      throw new Error('API response not ok');
+    // One request per symbol. /stock/profile2 used to be fetched alongside
+    // this, doubling every fan-out, but everything it supplied already had a
+    // static fallback (name, exchange, sector, industry) except market cap —
+    // and market cap is shares × price, so holding the share count locally
+    // (getSharesOutstanding) makes the quote sufficient. It also returned {}
+    // for every ETF, so half its answers were empty anyway.
+    const quoteRes = await rateLimitedFetch(
+      `${FINNHUB_BASE}/quote?symbol=${symbol}&token=${FINNHUB_KEY}`
+    );
+
+    if (!quoteRes.ok) {
+      throw new Error(`quote request failed: HTTP ${quoteRes.status}`);
     }
-    
-    const [quote, profile] = await Promise.all([
-      quoteRes.json() as Promise<FinnhubQuote>,
-      profileRes.json() as Promise<FinnhubProfile>,
-    ]);
-    
-    // Validate we got a real quote. profile.name is NOT required here:
-    // Finnhub's /stock/profile2 returns {} for ETFs (confirmed live for
-    // VOO/SPY/QQQ/etc.) even though /quote returns a perfectly good price —
-    // requiring both previously discarded every real ETF quote and silently
-    // substituted the static Jan-2026 mock forever, which is how an ETF
-    // position's P&L stayed pinned at 0.00 no matter how the market moved.
-    // mapFinnhubToStock() already falls back to mock data for the
-    // decorative name/exchange/sector fields when profile is empty, so an
-    // empty profile only means "unknown fund," never "unknown price."
+
+    const quote = await quoteRes.json() as FinnhubQuote;
+
     if (!quote.c) {
       // No real quote in the response — show the last real quote we have
       // (with its real timestamp) rather than substituting a static price.
@@ -91,7 +192,7 @@ export async function getLiveStock(symbol: string): Promise<Stock | null> {
       return getMockStock(symbol);
     }
 
-    const stock = mapFinnhubToStock(symbol, quote, profile);
+    const stock = mapFinnhubToStock(symbol, quote);
     cache.set(symbol, { data: stock, fetchedAt: Date.now() });
     return stock;
 
@@ -106,34 +207,24 @@ export async function getLiveStock(symbol: string): Promise<Stock | null> {
 }
 
 /**
- * Get multiple stocks in parallel.
- * Rate-limited to 10 concurrent requests for Finnhub free tier.
+ * Get multiple stocks.
+ *
+ * No manual batching any more. This used to fire groups of 10 symbols — 20
+ * simultaneous requests with profile2 — every 200ms, about 100 requests per
+ * second against a 30/sec ceiling. Pacing now lives in the token bucket, one
+ * layer down, so every caller gets it rather than only this one.
+ *
+ * Requesting all symbols at once is intentional and cheap: the pending
+ * promises are almost all parked in acquireToken(), not holding open sockets,
+ * and cached symbols resolve immediately without spending a token at all.
  */
 export async function getLiveStocks(symbols: string[]): Promise<Stock[]> {
   if (!LIVE_DATA_ENABLED) {
     return getAllTier1Stocks();
   }
-  
-  // Batch into groups of 10 to respect rate limits
-  const batches: string[][] = [];
-  for (let i = 0; i < symbols.length; i += 10) {
-    batches.push(symbols.slice(i, i + 10));
-  }
-  
-  const results: Stock[] = [];
-  for (const batch of batches) {
-    const batchResults = await Promise.all(
-      batch.map(symbol => getLiveStock(symbol))
-    );
-    results.push(...batchResults.filter((s): s is Stock => s !== null));
-    
-    // Small delay between batches to avoid rate limits
-    if (batches.length > 1) {
-      await new Promise(resolve => setTimeout(resolve, 200));
-    }
-  }
-  
-  return results;
+
+  const results = await Promise.all(symbols.map(symbol => getLiveStock(symbol)));
+  return results.filter((s): s is Stock => s !== null);
 }
 
 /**
@@ -147,11 +238,15 @@ export async function getCompanyNews(symbol: string): Promise<FinnhubNewsItem[]>
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
   
   try {
-    const res = await fetch(
+    const res = await rateLimitedFetch(
       `${FINNHUB_BASE}/company-news?symbol=${symbol}&from=${weekAgo}&to=${today}&token=${FINNHUB_KEY}`
     );
-    const items: FinnhubNewsItem[] = await res.json();
-    return items.slice(0, 20);
+    // Same failure shape as earnings: a 429 body parses cleanly as JSON, so
+    // status is the only reliable signal that this isn't a news list.
+    if (!res.ok) return [];
+    const items: unknown = await res.json();
+    if (!Array.isArray(items)) return [];
+    return (items as FinnhubNewsItem[]).slice(0, 20);
   } catch {
     return [];
   }
@@ -161,16 +256,65 @@ export async function getCompanyNews(symbol: string): Promise<FinnhubNewsItem[]>
  * Get company earnings surprises (last 4 quarters).
  * Used to generate "earnings beat" signals.
  */
+/**
+ * Reported EPS vs. estimate for the last 4 quarters.
+ *
+ * Two things this now gets right:
+ *
+ * 1. It checks res.ok and validates the shape. Finnhub answers a rate limit
+ *    with HTTP 429 and a JSON *object* body; `return await res.json()` parsed
+ *    that happily and handed it back typed as EarningsSurprise[]. Nothing in
+ *    the signature said otherwise, so the only thing standing between a 429
+ *    and a fabricated earnings signal was the caller remembering to run
+ *    Array.isArray — the adapter making its own failure the caller's problem.
+ *    An error is now [] here, at the boundary that knows it's an error.
+ *
+ * 2. It caches per symbol, with a much longer TTL than quotes. Companies
+ *    report quarterly, so a result is good for hours; re-fetching on every
+ *    stock-detail open spent the shared 60/min budget re-reading a number
+ *    that cannot have changed.
+ */
+const EARNINGS_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6h — quarterly data
+const earningsCache = new Map<string, { data: EarningsSurprise[]; fetchedAt: number }>();
+
+function isEarningsSurprise(v: unknown): v is EarningsSurprise {
+  const q = v as EarningsSurprise;
+  return !!q && typeof q === 'object'
+    && typeof q.actual === 'number'
+    && typeof q.estimate === 'number'
+    && typeof q.surprisePercent === 'number'
+    && typeof q.period === 'string';
+}
+
 export async function getEarningsSurprises(symbol: string): Promise<EarningsSurprise[]> {
   if (!LIVE_DATA_ENABLED) return [];
-  
+
+  const key = symbol.toUpperCase();
+  const cached = earningsCache.get(key);
+  if (cached && Date.now() - cached.fetchedAt < EARNINGS_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
   try {
-    const res = await fetch(
+    const res = await rateLimitedFetch(
       `${FINNHUB_BASE}/stock/earnings?symbol=${symbol}&limit=4&token=${FINNHUB_KEY}`
     );
-    return await res.json();
+    // 429 (rate limited), 401, 403 and friends all carry a JSON body that
+    // parses cleanly. Status is the only reliable signal that it isn't data.
+    if (!res.ok) return cached?.data ?? [];
+
+    const body: unknown = await res.json();
+    if (!Array.isArray(body)) return cached?.data ?? [];
+
+    const quarters = body.filter(isEarningsSurprise);
+    // A non-empty array that survives none of the shape checks is a payload
+    // we don't understand — don't cache it as if it were an empty result.
+    if (body.length > 0 && quarters.length === 0) return cached?.data ?? [];
+
+    earningsCache.set(key, { data: quarters, fetchedAt: Date.now() });
+    return quarters;
   } catch {
-    return [];
+    return cached?.data ?? [];
   }
 }
 
@@ -189,19 +333,9 @@ interface FinnhubQuote {
   t: number;    // Timestamp
 }
 
-interface FinnhubProfile {
-  name: string;
-  ticker: string;
-  exchange: string;
-  finnhubIndustry: string;
-  marketCapitalization: number; // In millions
-  shareOutstanding: number;
-  logo: string;
-  weburl: string;
-  country: string;
-  currency: string;
-  ipo: string;
-}
+// FinnhubProfile was removed along with the /stock/profile2 call. If that
+// endpoint is ever reinstated (e.g. for a real fundamentals refresh), note
+// that it returns {} for ETFs, so every field needs a fallback.
 
 export interface FinnhubNewsItem {
   category: string;
@@ -228,26 +362,31 @@ export interface EarningsSurprise {
 
 function mapFinnhubToStock(
   symbol: string,
-  quote: FinnhubQuote,
-  profile: FinnhubProfile
+  quote: FinnhubQuote
 ): Stock {
-  // Static fallback used ONLY for stable descriptive metadata (name/exchange/
-  // sector) in the rare case Finnhub's profile response omits them — never
-  // for price or fundamentals. Previously this also supplied peRatio, eps,
-  // dividendYield, beta, volume, and yearLow/High from the static mock file,
-  // silently attached to an object whose lastUpdated came from a real,
-  // just-fetched Finnhub quote — presenting frozen numbers as if they'd just
-  // been refreshed. Finnhub's free /quote endpoint doesn't provide those
-  // fields at all, so we now leave them undefined rather than fabricate
-  // them; screens render '—' when a field isn't available.
+  // Descriptive metadata (name/exchange/sector/industry) now comes from the
+  // static table outright, rather than from /stock/profile2 with this as a
+  // fallback. That endpoint is no longer fetched — see getLiveStock.
+  //
+  // This also fixes a mapping bug: profile.finnhubIndustry was written into
+  // BOTH sector and industry, so a live row's "sector" was actually Finnhub's
+  // industry taxonomy. The static table uses GICS sector names, so the two
+  // disagreed and the browse screen's sector chips could never match a live
+  // row — "Consumer Discretionary" filtered to nothing. Every row is now
+  // consistently GICS.
+  //
+  // Price fundamentals (peRatio, eps, dividendYield, beta, volume,
+  // yearLow/High) stay undefined: the free /quote endpoint doesn't return
+  // them, and backfilling from the static table would present frozen numbers
+  // under a just-fetched timestamp. Screens render '—' when absent.
   const mock = getMockStock(symbol);
 
   return {
     symbol,
-    name: profile.name || mock?.name || symbol,
-    exchange: (profile.exchange || mock?.exchange || 'NASDAQ') as 'NYSE' | 'NASDAQ' | 'AMEX',
-    sector: profile.finnhubIndustry || mock?.sector || 'Technology',
-    industry: profile.finnhubIndustry || mock?.industry || '',
+    name: mock?.name || symbol,
+    exchange: (mock?.exchange || 'NASDAQ') as 'NYSE' | 'NASDAQ' | 'AMEX',
+    sector: mock?.sector || 'Technology',
+    industry: mock?.industry || '',
 
     // Real live data
     price: quote.c,
@@ -258,16 +397,13 @@ function mapFinnhubToStock(
     dayLow: quote.l,
     lastUpdated: new Date(quote.t * 1000).toISOString(),
 
-    // Market cap is in millions from Finnhub. profile.marketCapitalization
-    // is undefined for ETFs (empty profile) — undefined * 1_000_000 is NaN,
-    // and Stock.marketCap is a required number, so that would leak a NaN
-    // into every screen that formats it. Fall back to the mock entry's
-    // value, which is already 0 for every fund in stockDatabase (the
-    // existing, deliberate convention for "no market cap," not a fabricated
-    // number) rather than inventing one.
-    marketCap: profile.marketCapitalization
-      ? profile.marketCapitalization * 1_000_000
-      : (mock?.marketCap ?? 0),
+    // Market cap = shares outstanding × live price, instead of a second API
+    // call. The share count comes from the static snapshot (see
+    // getSharesOutstanding), so this tracks the live price rather than
+    // sitting frozen at a January valuation. Funds carry 0 shares there, so
+    // they keep returning 0 — the table's existing "not applicable"
+    // convention, not an invented number.
+    marketCap: getSharesOutstanding(symbol) * quote.c,
 
     // Not available from the free /quote endpoint — left undefined rather
     // than backfilled with static data. (52-week high/low isn't derivable
@@ -280,12 +416,12 @@ function mapFinnhubToStock(
     yearLow: undefined,
     yearHigh: undefined,
 
-    // No fundamentals were fetched, so there is no vintage to claim. Left
-    // undefined rather than borrowing the snapshot's date, which would date
-    // numbers this object doesn't carry. areFundamentalsStale() treats
-    // undefined as stale, so nothing downstream states a fundamental it
-    // can't attribute. marketCap above is the one exception: it comes from
-    // the live profile when present, and only falls back to the mock's 0.
+    // No reported fundamentals were fetched, so there is no vintage to
+    // claim. Left undefined rather than borrowing the snapshot's date, which
+    // would date numbers this object doesn't carry. areFundamentalsStale()
+    // treats undefined as stale, so nothing downstream states a fundamental
+    // it can't attribute. marketCap is not covered by this: it's computed
+    // from the live price above, not reported by Finnhub.
     fundamentalsAsOf: undefined,
   };
 }

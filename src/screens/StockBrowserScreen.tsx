@@ -10,7 +10,7 @@
  * This prevents new investors from making risky picks before they're ready.
  */
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -21,11 +21,13 @@ import {
   TouchableOpacity,
   ScrollView,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { Card } from '../components/Card';
-import { searchStocks, fetchAllTier1, getStocksBySector } from '../services/marketDataFacade';
+import { useUserStore } from '../services/userStore';
+import { searchStocks, fetchBrowsableStocks, getStocksBySector } from '../services/marketDataFacade';
 import { changeCaret, changeColor } from '../utils/change';
 import { Stock } from '../types';
 
@@ -100,29 +102,87 @@ interface StockBrowserScreenProps {
 
 export function StockBrowserScreen({ onStockPress, onBack }: StockBrowserScreenProps) {
   const { theme } = useTheme();
+  // Tier 1 can only trade the approved blue-chip list (enforced in
+  // executeTrade), so browsing all 110 let a student pick a stock and only
+  // discover it was blocked at the buy screen. Higher tiers are not gated
+  // there, so they still see everything.
+  const userTier = useUserStore(s => s.user?.currentTier ?? 1);
   const [query, setQuery] = useState('');
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [allStocks, setAllStocks] = useState<Stock[]>([]);
-  const [loading, setLoading] = useState(true);
+  /**
+   * Three genuinely different situations that used to collapse into two
+   * misleading ones:
+   *   loading — the request is in flight
+   *   failed  — it timed out or came back with nothing. Previously this hit
+   *             `.catch(() => setAllStocks([]))` and rendered "No stocks
+   *             found. Try a different search." — a confident false claim
+   *             that no stocks exist, inviting the student to fix it by
+   *             editing a search box that was never the problem.
+   *   ready   — data arrived. An empty list here is a real empty filter
+   *             result and says so.
+   * A hung request also used to sit on "Loading stocks..." forever, because
+   * nothing ever timed out.
+   */
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
 
   // Derived from the stocks actually loaded, not the static database. The two
-  // disagree: live rows carry Finnhub's own industry taxonomy while the static
-  // file uses GICS sector names, so chips like "Consumer Discretionary" could
-  // never match a row and always filtered to nothing.
+  // used to disagree — live rows carried Finnhub's industry taxonomy while the
+  // static file uses GICS sector names, so chips like "Consumer Discretionary"
+  // could never match a row and always filtered to nothing. Dropping the
+  // profile2 call removed that second taxonomy, so both are GICS now; this
+  // stays derived from loaded rows so the chips can't outlive their data.
   const sectors = useMemo(
     () => ['All', ...Array.from(new Set(allStocks.map(s => s.sector).filter(Boolean))).sort()],
     [allStocks],
   );
 
-  // Load stocks on mount
-  useEffect(() => {
-    fetchAllTier1()
-      .then(stocks => setAllStocks(stocks))
-      .catch(() => setAllStocks([]))
-      .finally(() => setLoading(false));
-  }, []);
+  /**
+   * Cap on how long the list will sit in its loading state. The fetch is
+   * rate-limited (see the token bucket in finnhubAdapter), so a cold cache
+   * legitimately takes tens of seconds; this only has to be longer than a
+   * healthy slow load, not longer than any load.
+   *
+   * Timing out does NOT abort the in-flight requests — they finish and
+   * populate the adapter cache, so the Retry this surfaces is usually
+   * instant rather than a second full round trip.
+   */
+  // Must exceed a healthy cold-cache load. 44 symbols through the token
+  // bucket (10 burst, then 45/min) is ~43s, so this sits well clear of it.
+  // Boot prefetches into the same cache, so in practice this screen is
+  // usually warm and returns immediately; the slow path is a cold open
+  // straight to Browse. Lazy-loading visible rows would cut it properly.
+  const LOAD_TIMEOUT_MS = 75_000;
+
+  const load = useCallback(() => {
+    let settled = false;
+    setLoadState('loading');
+
+    const timeout = setTimeout(() => {
+      if (!settled) { settled = true; setLoadState('failed'); }
+    }, LOAD_TIMEOUT_MS);
+
+    fetchBrowsableStocks(userTier)
+      .then(stocks => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        setAllStocks(stocks);
+        // An empty array here means nothing loaded at all, which is a
+        // failure — not an empty filter result. The filters haven't run yet.
+        setLoadState(stocks.length > 0 ? 'ready' : 'failed');
+      })
+      .catch(() => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        setLoadState('failed');
+      });
+  }, [userTier]);
+
+  useEffect(() => { load(); }, [load]);
 
   const stocks = useMemo(() => {
     let results = query
@@ -247,9 +307,36 @@ export function StockBrowserScreen({ onStockPress, onBack }: StockBrowserScreenP
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
-            {loading ? 'Loading stocks...' : 'No stocks found. Try a different search.'}
-          </Text>
+          loadState === 'loading' ? (
+            <View style={styles.emptyWrap}>
+              <ActivityIndicator color={theme.colors.primary} />
+              <Text style={[styles.emptyText, { color: theme.colors.textSecondary, marginTop: 12 }]}>
+                Loading stocks…
+              </Text>
+            </View>
+          ) : loadState === 'failed' ? (
+            <View style={styles.emptyWrap}>
+              <Ionicons name="cloud-offline-outline" size={28} color={theme.colors.danger} />
+              <Text style={[styles.emptyText, { color: theme.colors.textPrimary, marginTop: 12, fontWeight: '700' }]}>
+                Couldn't load stocks
+              </Text>
+              <Text style={[styles.emptyText, { color: theme.colors.textSecondary, marginTop: 4 }]}>
+                Check your connection and try again. Nothing is wrong with your search.
+              </Text>
+              <TouchableOpacity
+                onPress={load}
+                style={[styles.retryBtn, { borderColor: theme.colors.primary }]}
+              >
+                <Text style={{ color: theme.colors.primary, fontWeight: '700' }}>Try again</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.emptyWrap}>
+              <Text style={[styles.emptyText, { color: theme.colors.textSecondary, marginTop: 0 }]}>
+                No stocks match these filters.
+              </Text>
+            </View>
+          )
         }
         ListHeaderComponent={
           stocks.length > 0 ? (
@@ -462,6 +549,8 @@ const styles = StyleSheet.create({
   list: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 40 },
   resultsCount: { fontSize: 12, fontWeight: '500', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   emptyText: { textAlign: 'center', fontSize: 14, marginTop: 40 },
+  emptyWrap: { alignItems: 'center', paddingHorizontal: 32, paddingTop: 40 },
+  retryBtn:  { marginTop: 18, paddingHorizontal: 22, paddingVertical: 10, borderRadius: 14, borderWidth: 1 },
   
   stockCard: { marginBottom: 8 },
   stockRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

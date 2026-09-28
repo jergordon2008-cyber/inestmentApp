@@ -17,8 +17,7 @@ import React, { createContext, useContext, useRef, useState } from 'react';
 import { showAlert } from '../utils/alert';
 import { useSubscriptionStore } from '../services/subscriptionStore';
 import { useUserStore } from '../services/userStore';
-import { useTradeJournalStore } from '../services/tradeJournalStore';
-import { useDecisionJournalStore, TradeReason, REASON_CONFIG } from '../services/decisionJournalStore';
+import { useTradeJournalStore, TradeReason, REASON_CONFIG, Confidence } from '../services/tradeJournalStore';
 import { useSkillTreeStore, SKILL_NODES } from '../services/skillTreeStore';
 import { logActivity } from '../services/firestoreSync';
 import { getChallengeForLesson } from '../data/lessonChallenges';
@@ -65,7 +64,6 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
   const canUseFeature = useSubscriptionStore(s => s.canUseFeature);
   const user = useUserStore(s => s.user);
   const createJournalEntry = useTradeJournalStore(s => s.createEntry);
-  const addDecisionEntry = useDecisionJournalStore(s => s.addEntry);
 
   const [explainTerm, setExplainTerm] = useState<string | null>(null);
   const [moodModal, setMoodModal] = useState<{ visible: boolean; symbol: string; pendingTrade?: { symbol: string; action: TradeType } }>({ visible: false, symbol: '' });
@@ -76,7 +74,7 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
   // real JournalEntry tied to that trade's real id. Cleared if they skip the
   // prompt (nothing to save) or once the trade completes, so it can't leak
   // into the next trade.
-  const [pendingThesis, setPendingThesis] = useState<{ reason: TradeReason; note: string; confidence: 1 | 2 | 3 | 4 | 5 } | null>(null);
+  const [pendingThesis, setPendingThesis] = useState<{ reason: TradeReason; note: string; confidence: Confidence } | null>(null);
 
   // Which lessonId was opened from the skill tree, so completion can
   // auto-complete that node and route back to the tree.
@@ -137,22 +135,18 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
   };
 
   const handleTradeSuccess = (trade?: Trade) => {
-    // Persist the thesis the student wrote in the Decision Journal prompt as a
-    // real journal entry tied to the real trade id. pendingThesis is null when
-    // the prompt was skipped, or when the trade was placed from an entry point
-    // that doesn't run the interceptors.
+    // Persist the thesis the student wrote in the pre-trade prompt as the one
+    // journal entry for this trade, tied to its real trade id. pendingThesis
+    // is null when the prompt was skipped, or when the trade was placed from
+    // an entry point that doesn't run the interceptors.
     if (trade && pendingThesis) {
       createJournalEntry({
         tradeId: trade.id,
         symbol: trade.symbol,
+        action: trade.type,
         buyReason: pendingThesis.note || REASON_CONFIG[pendingThesis.reason].label,
         exitPlan: '',
-      });
-      addDecisionEntry({
-        symbol: trade.symbol,
-        action: trade.type,
-        reason: pendingThesis.reason,
-        reasonNote: pendingThesis.note,
+        reasonCategory: pendingThesis.reason,
         confidence: pendingThesis.confidence,
       });
     }

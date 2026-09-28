@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity } fr
 import { useTheme } from '../context/ThemeContext';
 import { usePortfolioStore } from '../services/portfolioStore';
 import { useBehavioralStore } from '../services/behavioralStore';
-import { useDecisionJournalStore } from '../services/decisionJournalStore';
+import { useTradeJournalStore } from '../services/tradeJournalStore';
 
 interface Props { onBack: () => void; onSubscribePress: () => void; isPremium: boolean; }
 
@@ -17,7 +17,7 @@ export function PortfolioHealthScreen({ onBack, onSubscribePress, isPremium }: P
   const { theme } = useTheme();
   const portfolio = usePortfolioStore(s => s.portfolio);
   const { profile: biasProfile } = useBehavioralStore();
-  const { entries } = useDecisionJournalStore();
+  const entries = useTradeJournalStore(s => s.entries);
   const s = styles(theme);
 
   if (!isPremium) return (
@@ -62,7 +62,7 @@ export function PortfolioHealthScreen({ onBack, onSubscribePress, isPremium }: P
 
   // Behavioral Score (25pt)
   const biasCount = biasProfile?.topBiases?.length ?? 3;
-  const badTrades = entries.filter(e => e.reason === 'fomo' || e.reason === 'tip').length;
+  const badTrades = entries.filter(e => e.reasonCategory === 'fomo' || e.reasonCategory === 'tip').length;
   const behavScore = Math.round(Math.max(0, 25 - biasCount * 3 - badTrades * 2));
 
   // Cash Management Score (25pt)

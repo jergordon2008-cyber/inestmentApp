@@ -1,87 +1,69 @@
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+/**
+ * RETIRED — merged into tradeJournalStore.
+ *
+ * This used to be a second journal, written from the same pending thesis as
+ * the trade journal on every trade. It lost the merge on every axis that
+ * matters for the thesis gate:
+ *   - it wasn't keyed to the trade (symbol + timestamp only), so an entry
+ *     couldn't be tied back to the trade it described;
+ *   - it lived in device storage only, never Firestore, so it vanished on a
+ *     new device and was invisible to the admin view;
+ *   - it had no review. Its `outcome` field drove a "win rate" and "which
+ *     reasons win for you" screen, but nothing ever wrote `outcome`, so that
+ *     screen was empty for every student. It was also P&L grading, which the
+ *     thesis gate deliberately doesn't do.
+ * Its only unique data — the reason category and 1-5 confidence — now lives
+ * on the trade journal entry.
+ *
+ * What remains here is a read-only view of the old storage key, so the
+ * migration can recover those two fields. The key itself is left on disk,
+ * untouched and no longer written: reading it is reversible, deleting it
+ * isn't. There is intentionally no store here any more, so nothing can
+ * write to it again by accident.
+ */
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { TradeReason, Confidence } from './tradeJournalStore';
 
-export type TradeReason = 'fundamental' | 'technical' | 'news' | 'tip' | 'gut' | 'plan' | 'fomo';
+/** The zustand-persist key the retired store used. */
+export const LEGACY_DECISION_JOURNAL_KEY = 'investapp-decision-journal-storage';
 
-export interface JournalEntry {
+/** Shape of an entry as the retired store persisted it. */
+export interface LegacyDecisionEntry {
   id: string;
   symbol: string;
   action: 'buy' | 'sell';
   reason: TradeReason;
   reasonNote: string;
-  confidence: 1 | 2 | 3 | 4 | 5;
-  mood?: string;
+  confidence: Confidence;
+  mood?: string;      // declared but never actually written
   timestamp: string;
-  outcome?: number; // % gain/loss when closed
+  outcome?: number;   // declared but never actually written
 }
 
-/** `icon` is an Ionicons name — the app's icon set. Was an emoji until Phase 3. */
-export const REASON_CONFIG: Record<TradeReason, { label: string; icon: string; color: string }> = {
-  fundamental: { label: 'Fundamentals',  icon: 'bar-chart-outline',      color: '#10B981' },
-  technical:   { label: 'Chart Signal',  icon: 'trending-up-outline',    color: '#5B5FEF' },
-  news:        { label: 'News Event',    icon: 'newspaper-outline',      color: '#F59E0B' },
-  plan:        { label: 'My Playbook',   icon: 'book-outline',           color: '#06B6D4' },
-  gut:         { label: 'Gut Feeling',   icon: 'help-circle-outline',    color: '#8B5CF6' },
-  tip:         { label: 'Tip/Social',    icon: 'chatbubble-outline',     color: '#F87171' },
-  fomo:        { label: 'FOMO',          icon: 'trending-up',            color: '#EF4444' },
-};
-
-interface JournalState {
-  entries: JournalEntry[];
-  addEntry: (e: Omit<JournalEntry, 'id' | 'timestamp'>) => void;
-  getReasonStats: () => Record<TradeReason, { count: number; avgOutcome: number; winRate: number }>;
-  getConfidenceStats: () => { avgActualReturn: number; calibrationScore: number }[];
+/**
+ * Reads whatever the retired store left on this device. zustand-persist
+ * writes `{ state: { entries }, version }` as JSON. Anything missing or
+ * malformed reads as "no legacy data", never as an error — there being
+ * nothing to migrate is the normal case on most devices.
+ *
+ * Note the key is per-device, not per-user: it holds every account that
+ * ever traded here. That's safe for the migration, which only pairs a legacy
+ * entry with a trade-journal entry for the same symbol created within
+ * seconds of it — two different accounts can't trade in the same few
+ * seconds on one device.
+ */
+export async function readLegacyDecisionEntries(): Promise<LegacyDecisionEntry[]> {
+  const raw = await AsyncStorage.getItem(LEGACY_DECISION_JOURNAL_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    const entries = parsed?.state?.entries;
+    if (!Array.isArray(entries)) return [];
+    return entries.filter((e: any) =>
+      e && typeof e.symbol === 'string' && typeof e.timestamp === 'string' &&
+      typeof e.reason === 'string' && typeof e.confidence === 'number'
+    );
+  } catch {
+    return [];
+  }
 }
-
-function genId() { return Date.now().toString(36); }
-
-export const useDecisionJournalStore = create<JournalState>()(
-  persist(
-    (set, get) => ({
-      entries: [],
-
-      addEntry: (e) => {
-        const entry: JournalEntry = { ...e, id: genId(), timestamp: new Date().toISOString() };
-        const updated = [entry, ...get().entries].slice(0, 500);
-        set({ entries: updated });
-      },
-
-      getReasonStats: () => {
-    const base: Record<TradeReason, { count: number; avgOutcome: number; winRate: number }> = {
-      fundamental: { count: 0, avgOutcome: 0, winRate: 0 },
-      technical:   { count: 0, avgOutcome: 0, winRate: 0 },
-      news:        { count: 0, avgOutcome: 0, winRate: 0 },
-      tip:         { count: 0, avgOutcome: 0, winRate: 0 },
-      gut:         { count: 0, avgOutcome: 0, winRate: 0 },
-      plan:        { count: 0, avgOutcome: 0, winRate: 0 },
-      fomo:        { count: 0, avgOutcome: 0, winRate: 0 },
-    };
-    const wins: Record<TradeReason, number> = { fundamental: 0, technical: 0, news: 0, tip: 0, gut: 0, plan: 0, fomo: 0 };
-    get().entries.filter(e => e.outcome !== undefined).forEach(e => {
-      base[e.reason].count++;
-      base[e.reason].avgOutcome += e.outcome!;
-      if (e.outcome! > 0) wins[e.reason]++;
-    });
-    (Object.keys(base) as TradeReason[]).forEach(r => {
-      if (base[r].count > 0) {
-        base[r].avgOutcome /= base[r].count;
-        base[r].winRate = wins[r] / base[r].count;
-      }
-    });
-    return base;
-  },
-
-      getConfidenceStats: () =>
-        [1, 2, 3, 4, 5].map(conf => {
-          const relevant = get().entries.filter(e => e.confidence === conf && e.outcome !== undefined);
-          const avg = relevant.length ? relevant.reduce((s, e) => s + e.outcome!, 0) / relevant.length : 0;
-          return { avgActualReturn: avg, calibrationScore: avg };
-        }),
-    }),
-    {
-      name: 'investapp-decision-journal-storage',
-      storage: createJSONStorage(() => AsyncStorage),
-    }
-  )
-);

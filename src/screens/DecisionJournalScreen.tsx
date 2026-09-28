@@ -3,22 +3,27 @@ import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Tex
 import { showAlert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { changeColor, changeSign } from '../utils/change';
-import { useDecisionJournalStore, REASON_CONFIG, TradeReason } from '../services/decisionJournalStore';
+import { useTradeJournalStore, REASON_CONFIG, TradeReason, Confidence } from '../services/tradeJournalStore';
 
 interface Props { onBack: () => void; }
 
 export function DecisionJournalScreen({ onBack }: Props) {
   const { theme } = useTheme();
-  const { entries, getReasonStats } = useDecisionJournalStore();
-  const [tab, setTab] = useState<'insights' | 'log'>('insights');
+  // Reads the merged trade journal now — this screen used to have its own
+  // store. Its "WHICH REASONS WIN FOR YOU" insight is gone with it: it was
+  // driven by an `outcome` field nothing ever wrote, so it was empty for
+  // every student who ever opened this screen, and it graded reasoning by
+  // P&L, which the thesis gate deliberately doesn't do. Real prediction-
+  // accuracy insights (graded against what a student predicted, not against
+  // price) land here once the review flow that produces them exists.
+  const entries = useTradeJournalStore(s => s.entries);
+  const [tab, setTab] = useState<'insights' | 'log'>('log');
   const s = styles(theme);
 
-  const stats = getReasonStats();
-  const totalWithOutcome = entries.filter(e => e.outcome !== undefined).length;
-  const sortedReasons = (Object.keys(stats) as TradeReason[])
-    .filter(r => stats[r].count > 0)
-    .sort((a, b) => stats[b].avgOutcome - stats[a].avgOutcome);
+  const categoryCounts = (Object.keys(REASON_CONFIG) as TradeReason[])
+    .map(r => ({ reason: r, count: entries.filter(e => e.reasonCategory === r).length }))
+    .filter(c => c.count > 0)
+    .sort((a, b) => b.count - a.count);
 
   return (
     <SafeAreaView style={s.container}>
@@ -32,7 +37,7 @@ export function DecisionJournalScreen({ onBack }: Props) {
       </View>
 
       <View style={s.tabRow}>
-        {(['insights', 'log'] as const).map(t => (
+        {(['log', 'insights'] as const).map(t => (
           <TouchableOpacity key={t} onPress={() => setTab(t)}
             style={[s.tabBtn, tab === t && { borderBottomColor: theme.colors.primary, borderBottomWidth: 2 }]}>
             <Text style={[s.tabLabel, { color: tab === t ? theme.colors.primary : theme.colors.textTertiary }]}>
@@ -45,35 +50,33 @@ export function DecisionJournalScreen({ onBack }: Props) {
       <ScrollView contentContainerStyle={s.pad} showsVerticalScrollIndicator={false}>
         {tab === 'insights' ? (
           <>
-            {totalWithOutcome === 0 ? (
+            {categoryCounts.length === 0 ? (
               <View style={s.empty}>
                 <Ionicons name="journal-outline" size={40} color={theme.colors.textTertiary} style={{ marginBottom: 10 }} />
-                <Text style={s.emptyTitle}>No closed trades yet</Text>
-                <Text style={s.emptySub}>Once you close positions you journaled, we'll show which reasons actually win for you.</Text>
+                <Text style={s.emptyTitle}>No trades journaled yet</Text>
+                <Text style={s.emptySub}>Write a prediction before your next trade and it'll show up here.</Text>
               </View>
             ) : (
               <>
-                <Text style={s.sectionTitle}>WHICH REASONS WIN FOR YOU</Text>
-                {sortedReasons.map(r => {
-                  const cfg = REASON_CONFIG[r];
-                  const stat = stats[r];
-                  const outcomeTint = changeColor(stat.avgOutcome, theme);
+                <Text style={s.sectionTitle}>HOW YOU'VE BEEN DECIDING</Text>
+                {categoryCounts.map(({ reason, count }) => {
+                  const cfg = REASON_CONFIG[reason];
                   return (
-                    <View key={r} style={[s.statCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <View key={reason} style={[s.statCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <Ionicons name={cfg.icon as any} size={18} color={cfg.color} />
                         <Text style={[s.statLabel, { color: theme.colors.textPrimary }]}>{cfg.label}</Text>
                         <View style={{ flex: 1 }} />
-                        <Text style={{ color: outcomeTint, fontWeight: '800' }}>
-                          {changeSign(stat.avgOutcome)}{stat.avgOutcome.toFixed(1)}%
+                        <Text style={[s.statMeta, { color: theme.colors.textTertiary }]}>
+                          {count} trade{count === 1 ? '' : 's'}
                         </Text>
                       </View>
-                      <Text style={[s.statMeta, { color: theme.colors.textTertiary }]}>
-                        {stat.count} trade{stat.count === 1 ? '' : 's'} · {(stat.winRate * 100).toFixed(0)}% win rate
-                      </Text>
                     </View>
                   );
                 })}
+                <Text style={[s.emptySub, { marginTop: 4 }]}>
+                  Whether each reason actually paid off will show here once you've reviewed a few trades in the Trade Journal.
+                </Text>
               </>
             )}
           </>
@@ -85,20 +88,22 @@ export function DecisionJournalScreen({ onBack }: Props) {
                 <Text style={s.emptyTitle}>No entries yet</Text>
                 <Text style={s.emptySub}>Your reasoning gets logged automatically before every trade.</Text>
               </View>
-            ) : entries.map(e => {
-              const cfg = REASON_CONFIG[e.reason];
+            ) : [...entries].reverse().map(e => {
+              const cfg = e.reasonCategory ? REASON_CONFIG[e.reasonCategory] : null;
               return (
                 <View key={e.id} style={[s.logRow, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <Ionicons name={cfg.icon as any} size={16} color={cfg.color} />
+                    {cfg && <Ionicons name={cfg.icon as any} size={16} color={cfg.color} />}
                     <Text style={[s.logSymbol, { color: theme.colors.textPrimary }]}>{e.symbol}</Text>
-                    <Text style={[s.logAction, { color: e.action === 'buy' ? theme.colors.success : theme.colors.danger }]}>
-                      {e.action.toUpperCase()}
-                    </Text>
+                    {e.action && (
+                      <Text style={[s.logAction, { color: e.action === 'buy' ? theme.colors.success : theme.colors.danger }]}>
+                        {e.action.toUpperCase()}
+                      </Text>
+                    )}
                     <View style={{ flex: 1 }} />
-                    <Text style={[s.logDate, { color: theme.colors.textTertiary }]}>{new Date(e.timestamp).toLocaleDateString()}</Text>
+                    <Text style={[s.logDate, { color: theme.colors.textTertiary }]}>{new Date(e.createdAt).toLocaleDateString()}</Text>
                   </View>
-                  {!!e.reasonNote && <Text style={[s.logNote, { color: theme.colors.textSecondary }]}>{e.reasonNote}</Text>}
+                  {!!e.buyReason && <Text style={[s.logNote, { color: theme.colors.textSecondary }]}>{e.buyReason}</Text>}
                 </View>
               );
             })}
@@ -116,13 +121,13 @@ export function DecisionJournalModal({
   visible, symbol, action, onSubmit, onSkip
 }: {
   visible: boolean; symbol: string; action: string;
-  onSubmit: (reason: TradeReason, note: string, confidence: 1|2|3|4|5) => void;
+  onSubmit: (reason: TradeReason, note: string, confidence: Confidence) => void;
   onSkip: () => void;
 }) {
   const { theme } = useTheme();
   const [reason, setReason] = useState<TradeReason | null>(null);
   const [note, setNote] = useState('');
-  const [confidence, setConfidence] = useState<1|2|3|4|5>(3);
+  const [confidence, setConfidence] = useState<Confidence>(3);
   const s = styles(theme);
 
   const handleSubmit = () => {

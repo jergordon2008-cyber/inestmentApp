@@ -43,7 +43,7 @@ function writeDoc(data: Record<string, unknown>) {
   if (!db) return;
   const id = genId('evt');
   setDoc(doc(db, 'analytics_events', id), { ...data, id }).catch(e => {
-    console.warn('[analytics] failed to write event', data.event, e);
+    console.error('[analytics] failed to write event', data.event, e);
   });
 }
 

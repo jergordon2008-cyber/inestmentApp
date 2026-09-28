@@ -196,7 +196,7 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
         action: trade.type,
         symbol: trade.symbol,
         createdAt: new Date().toISOString(),
-      }).catch(() => {});
+      }).catch(e => console.error('[activity] failed to log trade activity', e)); // fire-and-forget
     }
     setPendingPrediction(null);
     // Land on the portfolio so the student sees the position they just opened.

@@ -11,6 +11,9 @@ import { useUserStore } from '../services/userStore';
 import { usePortfolioStore } from '../services/portfolioStore';
 import { useStreakStore } from '../services/streakStore';
 import { AnimatedNumber } from '../components/AnimatedNumber';
+import {
+  useSyncStatusStore, selectHasUnsaved, selectHasFailed, selectIsRetrying, selectIsSaving, retryNow,
+} from '../services/syncStatus';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -54,6 +57,14 @@ export function ProfileScreen({
   const portfolio = usePortfolioStore(s => s.portfolio);
   const streak    = useStreakStore(s => s.currentStreak);
   const [showSignOutModal, setShowSignOutModal] = useState(false);
+  // Signing out clears this account's portfolio and journal from the device,
+  // so anything not yet in the cloud would be lost. The sheet warns first and
+  // offers to retry; it switches back to the plain confirmation by itself
+  // once everything has saved.
+  const hasUnsaved = useSyncStatusStore(selectHasUnsaved);
+  const hasFailed  = useSyncStatusStore(selectHasFailed);
+  const retrying   = useSyncStatusStore(selectIsRetrying);
+  const saving     = useSyncStatusStore(selectIsSaving);
 
   if (!user) return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.colors.background }]}>
@@ -219,19 +230,57 @@ export function ProfileScreen({
       >
         <View style={[s.modalOverlay, { backgroundColor: 'rgba(0,0,0,0.65)' }]}>
           <View style={[s.modalCard, { backgroundColor: theme.colors.surface }]}>
-            <View style={[s.modalIconWrap, { backgroundColor: theme.colors.danger + '18' }]}>
-              <Ionicons name="log-out-outline" size={26} color={theme.colors.danger} />
-            </View>
-            <Text style={[s.modalTitle, { color: theme.colors.textPrimary }]}>Sign out?</Text>
-            <Text style={[s.modalBody, { color: theme.colors.textSecondary }]}>
-              Your progress is saved to your account and will be here when you sign back in.
-            </Text>
-            <TouchableOpacity
-              onPress={confirmSignOut}
-              style={[s.modalBtn, { backgroundColor: theme.colors.danger + '14', borderColor: theme.colors.danger + '30' }]}
-            >
-              <Text style={[s.modalBtnText, { color: theme.colors.danger }]}>Sign Out</Text>
-            </TouchableOpacity>
+            {hasUnsaved ? (
+              <>
+                <View style={[s.modalIconWrap, { backgroundColor: theme.colors.warning + '18' }]}>
+                  <Ionicons name="cloud-offline-outline" size={26} color={theme.colors.warning} />
+                </View>
+                <Text style={[s.modalTitle, { color: theme.colors.textPrimary }]}>You have unsaved changes</Text>
+                <Text style={[s.modalBody, { color: theme.colors.textSecondary }]}>
+                  {hasFailed
+                    ? "Your latest changes haven't saved to the cloud. Signing out now would lose them. Retry to save them to your account first."
+                    : saving
+                      ? 'Your latest changes are still saving to the cloud. Signing out now would lose them.'
+                      : "Changes from your last session haven't saved to the cloud, and signing out now would lose them. Reconnect and reopen the app to save them."}
+                </Text>
+                {(hasFailed || saving) && (
+                  <TouchableOpacity
+                    onPress={() => { retryNow(); }}
+                    disabled={retrying || !hasFailed}
+                    style={[s.modalBtn, {
+                      backgroundColor: theme.colors.primary + '14', borderColor: theme.colors.primary + '30',
+                      opacity: retrying || !hasFailed ? 0.6 : 1,
+                    }]}
+                  >
+                    <Text style={[s.modalBtnText, { color: theme.colors.primary }]}>
+                      {retrying ? 'Retrying…' : hasFailed ? 'Retry' : 'Saving…'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  onPress={confirmSignOut}
+                  style={[s.modalBtn, { backgroundColor: theme.colors.danger + '14', borderColor: theme.colors.danger + '30' }]}
+                >
+                  <Text style={[s.modalBtnText, { color: theme.colors.danger }]}>Sign out and lose changes</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <View style={[s.modalIconWrap, { backgroundColor: theme.colors.danger + '18' }]}>
+                  <Ionicons name="log-out-outline" size={26} color={theme.colors.danger} />
+                </View>
+                <Text style={[s.modalTitle, { color: theme.colors.textPrimary }]}>Sign out?</Text>
+                <Text style={[s.modalBody, { color: theme.colors.textSecondary }]}>
+                  Your progress is saved to your account and will be here when you sign back in.
+                </Text>
+                <TouchableOpacity
+                  onPress={confirmSignOut}
+                  style={[s.modalBtn, { backgroundColor: theme.colors.danger + '14', borderColor: theme.colors.danger + '30' }]}
+                >
+                  <Text style={[s.modalBtnText, { color: theme.colors.danger }]}>Sign Out</Text>
+                </TouchableOpacity>
+              </>
+            )}
             <TouchableOpacity onPress={() => setShowSignOutModal(false)} style={s.modalCancelBtn}>
               <Text style={[s.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
             </TouchableOpacity>

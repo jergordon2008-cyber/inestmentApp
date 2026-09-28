@@ -18,6 +18,7 @@ import { tier3Lessons } from '../data/tier3curriculum';
 import { getStockSync } from '../services/marketDataFacade';
 import { fs, sp, isTablet } from '../constants/responsive';
 import { changeCaret, changeColor, changeSign } from '../utils/change';
+import { SyncBanner } from '../components/SyncBanner';
 
 const ALL_LESSONS = [...tier1Lessons, ...tier2Lessons, ...tier3Lessons];
 
@@ -96,6 +97,7 @@ export function HomeScreen({
 
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.colors.background }]}>
+      <SyncBanner />
       <ScrollView
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}

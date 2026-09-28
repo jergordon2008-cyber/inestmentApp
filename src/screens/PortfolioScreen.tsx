@@ -14,6 +14,7 @@ import { CompanyLogo } from '../components/CompanyLogo';
 import { PortfolioPieChart } from '../components/PortfolioPieChart';
 import { Position } from '../types';
 import { changeCaret, changeColor, changeSign } from '../utils/change';
+import { SyncBanner } from '../components/SyncBanner';
 
 interface Props {
   onBack: () => void; onStockPress: (sym: string) => void; onBrowsePress: () => void;
@@ -71,6 +72,7 @@ export function PortfolioScreen({ onBack, onStockPress, onBrowsePress, embedded,
           <Text style={s.investBtnText}>+ Start Investing</Text>
         </TouchableOpacity>
       </View>
+      <SyncBanner />
       <View style={s.empty}>
         <Ionicons name="pie-chart-outline" size={52} color={theme.colors.textTertiary} style={{ marginBottom: 16 }} />
         <Text style={[s.emptyTitle, { color: theme.colors.textPrimary }]}>No portfolio yet</Text>
@@ -99,6 +101,7 @@ export function PortfolioScreen({ onBack, onStockPress, onBrowsePress, embedded,
           </TouchableOpacity>
         </View>
       )}
+      <SyncBanner />
 
       <ScrollView
         contentContainerStyle={s.scroll}

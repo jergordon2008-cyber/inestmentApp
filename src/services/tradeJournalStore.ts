@@ -168,9 +168,15 @@ export interface JournalEntry {
 
 interface TradeJournalState {
   entries: JournalEntry[];
+  /**
+   * The account these entries belong to. Null on a device that predates owner
+   * tracking, until the first sign-in reconciles it (see journalReconcile).
+   */
+  ownerUid: string | null;
 
   // Actions
-  setEntries: (entries: JournalEntry[]) => void;
+  /** Replaces the entries and records whose they are. */
+  setEntries: (entries: JournalEntry[], ownerUid: string | null) => void;
   /** Idempotent. Folds the retired decision journal's category/confidence in. */
   migrateLegacyDecisionJournal: () => Promise<void>;
   createEntry: (entry: Omit<JournalEntry, 'id' | 'createdAt' | 'updatedAt'>) => JournalEntry;
@@ -262,13 +268,13 @@ export const useTradeJournalStore = create<TradeJournalState>()(
   persist(
     (set, get) => ({
       entries: [],
+      ownerUid: null,
 
-      // Hydrates from Firestore-loaded entries (e.g. on login from a new device).
-      // That load replaces local state wholesale, so it would wipe any fields
-      // the migration had filled in locally but not yet synced — re-running
-      // the migration afterwards puts them back.
-      setEntries: (entries) => {
-        set({ entries });
+      // Applies the reconciled journal on sign-in. Re-running the migration
+      // afterwards fills in anything a cloud-only entry is missing that this
+      // device's legacy journal can supply.
+      setEntries: (entries, ownerUid) => {
+        set({ entries, ownerUid });
         void get().migrateLegacyDecisionJournal();
       },
 

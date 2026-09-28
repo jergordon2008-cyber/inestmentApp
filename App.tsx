@@ -17,25 +17,55 @@ import {
   subscribeToSubscriptionStatus,
 } from './src/services/firestoreSync';
 import { initAnalyticsLifecycle, startNewSession, logScreenView, flushScreenBuffer } from './src/services/analyticsService';
-import { useTradeJournalStore } from './src/services/tradeJournalStore';
+import { useTradeJournalStore, JournalEntry } from './src/services/tradeJournalStore';
 import { initializeLivePrices } from './src/services/stockDataService';
 import { TourGuide } from './src/components/TourGuide';
 import { reconcilePortfolio, savePortfolioBackups, ReconcileResult } from './src/services/portfolioReconcile';
+import { reconcileJournal, saveJournalBackups, JournalReconcileResult } from './src/services/journalReconcile';
+import { requestSave, resetSync, setSyncAccount, loadUnsavedFlags, useSyncStatusStore } from './src/services/syncStatus';
 import type { Portfolio } from './src/types';
 
 /**
- * Resolves once the portfolio store has loaded from device storage.
+ * Resolves once a persisted store has loaded from device storage.
  * Reconciliation has to read the device copy, and reading it before it has
  * loaded sees nothing — worse, the copy then lands afterwards and silently
  * overwrites whatever reconciliation decided.
  */
-function waitForPortfolioHydration(): Promise<void> {
-  const p = usePortfolioStore.persist;
+function waitForHydration(p: { hasHydrated: () => boolean; onFinishHydration: (fn: () => void) => () => void }): Promise<void> {
   if (p.hasHydrated()) return Promise.resolve();
   return new Promise(resolve => {
     const unsub = p.onFinishHydration(() => { unsub(); resolve(); });
     // Re-check after subscribing, in case hydration finished in between.
     if (p.hasHydrated()) { unsub(); resolve(); }
+  });
+}
+
+// Cloud writes, handed to syncStatus.requestSave. Each reads the store when
+// it runs rather than taking a value, because syncStatus calls it again for
+// every retry and a retry must send the latest state, not the one that failed.
+function writeProfile(forUid: string): Promise<void> {
+  const user = useUserStore.getState().user;
+  return user ? saveUserProfile(forUid, user) : Promise.resolve();
+}
+function writePortfolio(forUid: string): Promise<void> {
+  const portfolio = usePortfolioStore.getState().portfolio;
+  return portfolio && portfolio.userId === forUid ? savePortfolio(forUid, portfolio) : Promise.resolve();
+}
+function writeJournal(forUid: string): Promise<void> {
+  const { entries, ownerUid } = useTradeJournalStore.getState();
+  return ownerUid === forUid ? saveJournal(forUid, entries) : Promise.resolve();
+}
+function writePublicStats(forUid: string): Promise<void> {
+  const user = useUserStore.getState().user;
+  const portfolio = usePortfolioStore.getState().portfolio;
+  if (!user || (portfolio && portfolio.userId !== forUid)) return Promise.resolve();
+  return savePublicStats(forUid, {
+    displayName: user.displayName,
+    totalValue: portfolio?.totalValue ?? 100000,
+    totalReturnPercent: portfolio?.totalReturnPercent ?? 0,
+    lessonsCompletedCount: user.lessonsCompleted.length,
+    streak: user.streak,
+    currentTier: user.currentTier,
   });
 }
 
@@ -59,6 +89,7 @@ function AppContent() {
   const updatePositionPrices = usePortfolioStore(s => s.updatePositionPrices);
   const setPortfolio = usePortfolioStore(s => s.setPortfolio);
   const journalEntries = useTradeJournalStore(s => s.entries);
+  const journalOwner = useTradeJournalStore(s => s.ownerUid);
   const setJournalEntries = useTradeJournalStore(s => s.setEntries);
   const user = useUserStore(s => s.user);
 
@@ -94,7 +125,7 @@ function AppContent() {
    * so a copy is never discarded that couldn't be kept.
    */
   const resolvePortfolio = async (forUid: string, cloud: Portfolio | null): Promise<ReconcileResult> => {
-    await waitForPortfolioHydration();
+    await Promise.all([waitForHydration(usePortfolioStore.persist), loadUnsavedFlags()]);
     const device = usePortfolioStore.getState().portfolio;
     const result = reconcilePortfolio(device, cloud, forUid);
     if (result.backups.length > 0) {
@@ -113,10 +144,56 @@ function AppContent() {
       // account has none. That copy is already backed up; stop showing it.
       resetPortfolio();
     }
-    // pushToCloud: leave the counter unset so the save effect sends it.
-    // Otherwise mark it as already in sync so nothing is re-sent.
-    lastSyncedTradeCount.current = result.pushToCloud ? null : (result.portfolio?.trades.length ?? null);
+    // pushToCloud, or a save the last session never saw acknowledged: leave
+    // the counter unset so the save effect sends it. Otherwise mark it as
+    // already in sync so nothing is re-sent.
+    const unsavedLastSession = useSyncStatusStore.getState().unsaved.portfolio === forUid;
+    lastSyncedTradeCount.current = result.pushToCloud || unsavedLastSession
+      ? null
+      : (result.portfolio?.trades.length ?? null);
     setPortfolioReadyFor(forUid);
+  };
+
+  /**
+   * The journal's equivalent of portfolioReadyFor. The journal save effect
+   * used to fire on launch before the cloud journal was read, overwriting it
+   * with the device copy; then the load replaced the device copy with the
+   * cloud one. Either could erase entries. Now nothing is saved until the two
+   * have been merged (journalReconcile).
+   */
+  const [journalReadyFor, setJournalReadyFor] = useState<string | null>(null);
+  const lastSyncedJournal = useRef<JournalEntry[] | null>(null);
+
+  /**
+   * Merges the device journal (once loaded) with the cloud one and keeps any
+   * version that isn't used. Must run BEFORE adoptPortfolio: a journal saved
+   * before owners were recorded is attributed to the device portfolio's owner
+   * — the two are always written and cleared together — and adoptPortfolio
+   * replaces that portfolio.
+   */
+  const resolveJournal = async (forUid: string, cloud: JournalEntry[] | null): Promise<JournalReconcileResult> => {
+    await Promise.all([waitForHydration(useTradeJournalStore.persist), waitForHydration(usePortfolioStore.persist), loadUnsavedFlags()]);
+    const { entries, ownerUid } = useTradeJournalStore.getState();
+    const owner = ownerUid ?? usePortfolioStore.getState().portfolio?.userId ?? null;
+    const result = reconcileJournal({ ownerUid: owner, entries }, cloud, forUid);
+    if (result.backups.length > 0) {
+      await saveJournalBackups(result.backups);
+      console.warn('[journal] kept on this device:', result.backups.map(b => b.reason));
+    }
+    return result;
+  };
+
+  const adoptJournal = (forUid: string, result: JournalReconcileResult) => {
+    setJournalEntries(result.entries, forUid);
+    const unsavedLastSession = useSyncStatusStore.getState().unsaved.journal === forUid;
+    // Same idea as lastSyncedTradeCount: the array now in the store is what
+    // the cloud holds, unless it needs pushing. The legacy migration that
+    // setEntries kicks off makes a new array if it fills anything in, and
+    // that change is then saved like any other.
+    lastSyncedJournal.current = result.pushToCloud || unsavedLastSession
+      ? null
+      : useTradeJournalStore.getState().entries;
+    setJournalReadyFor(forUid);
   };
   const [isAdminUser, setIsAdminUser] = useState(false);
   const setAdminOverride = useSubscriptionStore(s => s.setAdminOverride);
@@ -178,14 +255,18 @@ function AppContent() {
           // sees the settled portfolio. This replaced "cloud wins", which
           // erased every trade the cloud had missed.
           const decision = await resolvePortfolio(fbUser.uid, remotePortfolio);
+          const journalDecision = await resolveJournal(fbUser.uid, entries);
           adoptPortfolio(fbUser.uid, decision);
           setUser(profile);
           setOnboarded(true);
-          setJournalEntries(entries);
+          adoptJournal(fbUser.uid, journalDecision);
         } else {
           // Signed up but never finished onboarding: there's no portfolio to
           // reconcile yet, and onboarding is about to create one.
-          adoptPortfolio(fbUser.uid, await resolvePortfolio(fbUser.uid, null));
+          const decision = await resolvePortfolio(fbUser.uid, null);
+          const journalDecision = await resolveJournal(fbUser.uid, entries);
+          adoptPortfolio(fbUser.uid, decision);
+          adoptJournal(fbUser.uid, journalDecision);
         }
       } catch (e) {
         // Deliberately NOT marked ready. If the cloud copy couldn't be read,
@@ -201,17 +282,15 @@ function AppContent() {
   // Push local changes to Firestore whenever this student's profile,
   // portfolio, or journal changes — keeps their account durable and
   // visible to the admin view / leaderboard across devices.
+  //
+  // Every save goes through syncStatus, which tracks it, retries network
+  // failures, logs every failure, and is what the sync banner reads.
+  useEffect(() => { setSyncAccount(uid); }, [uid]);
+
   useEffect(() => {
     if (!uid || !user) return;
-    saveUserProfile(uid, user).catch(() => {});
-    savePublicStats(uid, {
-      displayName: user.displayName,
-      totalValue: portfolio?.totalValue ?? 100000,
-      totalReturnPercent: portfolio?.totalReturnPercent ?? 0,
-      lessonsCompletedCount: user.lessonsCompleted.length,
-      streak: user.streak,
-      currentTier: user.currentTier,
-    }).catch(() => {});
+    requestSave('profile', uid, () => writeProfile(uid));
+    requestSave('publicStats', uid, () => writePublicStats(uid));
   }, [uid, user]);
 
   // Syncs on trade count / cash changes (a real trade happened), not on
@@ -232,17 +311,8 @@ function AppContent() {
     if (lastSyncedTradeCount.current === tradeCount) return;
     lastSyncedTradeCount.current = tradeCount;
 
-    savePortfolio(uid, portfolio).catch(() => {});
-    if (user) {
-      savePublicStats(uid, {
-        displayName: user.displayName,
-        totalValue: portfolio.totalValue,
-        totalReturnPercent: portfolio.totalReturnPercent,
-        lessonsCompletedCount: user.lessonsCompleted.length,
-        streak: user.streak,
-        currentTier: user.currentTier,
-      }).catch(() => {});
-    }
+    requestSave('portfolio', uid, () => writePortfolio(uid));
+    if (user) requestSave('publicStats', uid, () => writePublicStats(uid));
   }, [uid, portfolio, portfolioReadyFor]);
 
   // Even without a new trade, resync public_stats (cheap, single small doc)
@@ -251,22 +321,19 @@ function AppContent() {
   useEffect(() => {
     if (!uid || !user || !portfolio) return;
     const interval = setInterval(() => {
-      savePublicStats(uid, {
-        displayName: user.displayName,
-        totalValue: portfolio.totalValue,
-        totalReturnPercent: portfolio.totalReturnPercent,
-        lessonsCompletedCount: user.lessonsCompleted.length,
-        streak: user.streak,
-        currentTier: user.currentTier,
-      }).catch(() => {});
+      requestSave('publicStats', uid, () => writePublicStats(uid));
     }, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [uid, user, portfolio]);
 
+  // Journal: same gating as the portfolio — nothing until this account's
+  // device and cloud journals have been merged, never another user's.
   useEffect(() => {
-    if (!uid) return;
-    saveJournal(uid, journalEntries).catch(() => {});
-  }, [uid, journalEntries]);
+    if (!uid || journalReadyFor !== uid || journalOwner !== uid) return;
+    if (lastSyncedJournal.current === journalEntries) return;
+    lastSyncedJournal.current = journalEntries;
+    requestSave('journal', uid, () => writeJournal(uid));
+  }, [uid, journalEntries, journalReadyFor, journalOwner]);
 
   // Boot live price refresh from Finnhub (no-op if no API key set)
   useEffect(() => { initializeLivePrices(); }, []);
@@ -309,39 +376,40 @@ function AppContent() {
     // Seed this student's real Firestore documents immediately so they show
     // up in the leaderboard/admin view right away, not just after the first
     // sync effect fires.
-    saveUserProfile(uid, newUser).catch(() => {});
-    savePublicStats(uid, {
-      displayName: newUser.displayName,
-      totalValue: 100000,
-      totalReturnPercent: 0,
-      lessonsCompletedCount: 0,
-      streak: 0,
-      currentTier: newUser.currentTier,
-    }).catch(() => {});
+    // (Both read the store, which setUser/initializePortfolio just filled.)
+    requestSave('profile', uid, () => writeProfile(uid));
+    requestSave('publicStats', uid, () => writePublicStats(uid));
 
     // Show the tour guide for new users
     setTimeout(() => setShowTour(true), 600);
   };
 
+  // Sign-out clears this account's data from the device, so anything still
+  // unsaved is gone — ProfileScreen warns before it gets here. Its flags go
+  // too: there's nothing left for them to retry.
   const handleSignOut = () => {
     flushScreenBuffer();
-    signOutUser().catch(() => {});
+    signOutUser().catch(e => console.error('[auth] sign-out failed', e));
+    resetSync({ clearFlagsFor: uid ?? undefined });
     setUid(null);
     setAuthEmail('');
     setPortfolioReadyFor(null);
+    setJournalReadyFor(null);
     logout();
     resetPortfolio();
-    setJournalEntries([]);
+    setJournalEntries([], null);
   };
 
   const handleRestartOnboarding = () => {
-    signOutUser().catch(() => {});
+    signOutUser().catch(e => console.error('[auth] sign-out failed', e));
+    resetSync({ clearFlagsFor: uid ?? undefined });
     setUid(null);
     setAuthEmail('');
     setPortfolioReadyFor(null);
+    setJournalReadyFor(null);
     logout();
     resetPortfolio();
-    setJournalEntries([]);
+    setJournalEntries([], null);
   };
 
   // Hydrate an existing account after login. Mirrors the session-restore
@@ -357,17 +425,21 @@ function AppContent() {
       ]);
       if (profile) {
         const decision = await resolvePortfolio(loggedInUid, remotePortfolio);
+        const journalDecision = await resolveJournal(loggedInUid, entries);
         adoptPortfolio(loggedInUid, decision);
         setUser(profile);
         setOnboarded(true);
-        setJournalEntries(entries);
+        adoptJournal(loggedInUid, journalDecision);
         // Legacy accounts (created before the name field existed, or whose
         // name was auto-derived from their email) get a one-time prompt
         // instead of staying unreadable on the leaderboard forever.
         if (!profile.hasCustomDisplayName) setNeedsNamePrompt(true);
       } else {
         // Account exists in Auth but never finished onboarding.
-        adoptPortfolio(loggedInUid, await resolvePortfolio(loggedInUid, null));
+        const decision = await resolvePortfolio(loggedInUid, null);
+        const journalDecision = await resolveJournal(loggedInUid, entries);
+        adoptPortfolio(loggedInUid, decision);
+        adoptJournal(loggedInUid, journalDecision);
         navigate('Onboarding');
       }
     } catch (e) {
@@ -383,9 +455,12 @@ function AppContent() {
       // A new account has no cloud portfolio. Reconciling against nothing
       // still matters: if this device was left holding another student's
       // copy, it's backed up here instead of overwritten by onboarding.
-      resolvePortfolio(newUid, null)
-        .then(decision => adoptPortfolio(newUid, decision))
-        .catch(e => console.warn('[signup] could not back up an existing device portfolio', e));
+      Promise.all([resolvePortfolio(newUid, null), resolveJournal(newUid, null)])
+        .then(([decision, journalDecision]) => {
+          adoptPortfolio(newUid, decision);
+          adoptJournal(newUid, journalDecision);
+        })
+        .catch(e => console.error('[signup] could not back up this device\'s existing portfolio/journal', e));
     },
     onLoginAuthed: handleLoginAuthed,
     onOnboardingComplete: handleOnboardingComplete,
@@ -425,9 +500,8 @@ function AppContent() {
         visible={needsNamePrompt}
         onSubmit={(newName) => {
           if (!uid || !user) return;
-          const updatedUser = { ...user, displayName: newName, hasCustomDisplayName: true };
           updateUser({ displayName: newName, hasCustomDisplayName: true });
-          saveUserProfile(uid, updatedUser).catch(() => {});
+          requestSave('profile', uid, () => writeProfile(uid));
           setNeedsNamePrompt(false);
         }}
       />

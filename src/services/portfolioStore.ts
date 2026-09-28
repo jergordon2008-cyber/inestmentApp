@@ -15,6 +15,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Portfolio, Position, Trade, TradeType, Stock, Tier } from '../types';
 import { stockDatabase } from './stockDataService';
+import { isPredictionTextValid } from './tradeJournalStore';
 
 interface PortfolioState {
   portfolio: Portfolio | null;
@@ -163,6 +164,21 @@ export const usePortfolioStore = create<PortfolioState>()(
         const totalAmount = shares * pricePerShare;
 
         // ============= VALIDATION =============
+
+        // Thesis gate. A buy needs a written prediction: the claim travels in
+        // buyReason and the way-to-be-wrong in exitPlan, and both land on the
+        // Trade record below — so the prediction survives even if the journal
+        // write that follows a trade fails. Enforced here, at the one function
+        // every trade goes through, because the entry points already leaked
+        // (a web URL reaches the Trade screen without the prompt). Sells are
+        // exempt by design: blocking a sale until you write something would
+        // trap the position.
+        if (type === 'buy' && !isPredictionTextValid(params.buyReason, params.exitPlan)) {
+          return {
+            success: false,
+            error: 'Write your prediction before buying — what you expect to happen, and how you would know you were wrong.',
+          };
+        }
 
         // Tier 1: Only approved blue-chips
         if (userTier === 1 && !TIER_1_APPROVED_SYMBOLS.includes(symbol)) {

@@ -42,6 +42,84 @@ export const REASON_CONFIG: Record<TradeReason, { label: string; icon: string; c
 
 export type Confidence = 1 | 2 | 3 | 4 | 5;
 
+// ============================================================================
+// PREDICTIONS (the thesis gate)
+// ============================================================================
+// A buy can't execute without one. It's written before the order ticket, tied
+// to one exact symbol, and later self-graded against what the student said
+// would happen — never against whether the trade made money.
+
+export type CheckBackPeriod = '2w' | '1m' | '3m' | '6m';
+
+export const CHECK_BACK_OPTIONS: { value: CheckBackPeriod; label: string; days: number }[] = [
+  { value: '2w', label: '2 weeks',  days: 14 },
+  { value: '1m', label: '1 month',  days: 30 },
+  { value: '3m', label: '3 months', days: 91 },
+  { value: '6m', label: '6 months', days: 182 },
+];
+
+/**
+ * Minimum trimmed lengths. One definition, used by the form, the Trade screen
+ * and executeTrade, so no layer can drift into accepting something another
+ * would have refused. Deliberately low bars: the goal is a real sentence, not
+ * an essay — "up" or "idk" should fail, "Services revenue beats iPhone growth
+ * next quarter" should pass.
+ */
+export const PREDICTION_MIN_CLAIM = 30;
+export const PREDICTION_MIN_FALSIFIER = 15;
+
+export interface Prediction {
+  /** The one symbol this prediction may be attached to. */
+  symbol: string;
+  /** "What will happen." Graded later — so it should be about the company. */
+  claim: string;
+  /** "How I'll know I'm wrong." */
+  falsifier: string;
+  checkBack: CheckBackPeriod;
+  reasonCategory: TradeReason;
+  confidence: Confidence;
+}
+
+/** Claim and falsifier long enough to be a real statement. */
+export function isPredictionTextValid(claim: string | undefined, falsifier: string | undefined): boolean {
+  return (claim ?? '').trim().length >= PREDICTION_MIN_CLAIM
+      && (falsifier ?? '').trim().length >= PREDICTION_MIN_FALSIFIER;
+}
+
+/** A prediction that is complete and belongs to exactly this symbol. */
+export function isPredictionFor(p: Prediction | null | undefined, symbol: string): p is Prediction {
+  return !!p
+    && p.symbol.toUpperCase() === symbol.toUpperCase()
+    && isPredictionTextValid(p.claim, p.falsifier);
+}
+
+export function checkBackDate(period: CheckBackPeriod, from: Date = new Date()): string {
+  const days = CHECK_BACK_OPTIONS.find(o => o.value === period)?.days ?? 30;
+  return new Date(from.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/**
+ * Soft check for a claim that's really a call on the price. Graded against
+ * itself, "AAPL will go up" is just "did I make money" — the thing the gate
+ * exists not to grade. This only ever drives a hint; it never blocks, because
+ * keyword matching is far too blunt to refuse someone's reasoning on.
+ *
+ * Tuned to avoid false positives over catching everything. A missed price
+ * call just means no hint; a false positive tells a student to stop making
+ * exactly the kind of prediction we want — "Revenue grows 15% next year" is
+ * specific, measurable and about the business. So a bare number or dollar
+ * figure only counts when nothing in the sentence is about the business.
+ */
+const STOCK_MOVES = /\b(price|stock|shares?)\b.*\b(go(es|ing)? (up|down)|rise|rises|rising|climb|climbs|fall|falls|drop|drops|double|doubles|triple|moon)\b/i;
+const BARE_DIRECTION = /\b(go(es|ing)? (up|down)|to the moon)\b/i;
+const NUMBER = /\$\s?\d|\d+(\.\d+)?\s?%/;
+const BUSINESS = /\b(revenue|revenues|sales|earnings|eps|margin|margins|profit|profits|income|guidance|users|subscribers|customers|market share|deliveries|units|growth)\b/i;
+
+export function looksLikePriceCall(claim: string): boolean {
+  if (STOCK_MOVES.test(claim) || BARE_DIRECTION.test(claim)) return true;
+  return NUMBER.test(claim) && !BUSINESS.test(claim);
+}
+
 export interface JournalEntry {
   id: string;
   tradeId: string;
@@ -55,9 +133,17 @@ export interface JournalEntry {
   reasonCategory?: TradeReason;
   confidence?: Confidence;
 
-  // Pre-trade reflection
+  // Pre-trade reflection. For a gated prediction, buyReason holds the claim
+  // ("what will happen") and exitPlan the falsifier ("how I'll know I'm
+  // wrong") — the same fields the Trade record carries them in.
   buyReason: string;                  // "Why am I buying this?"
   exitPlan: string;                   // "When/why will I sell?"
+  /**
+   * When to self-grade the prediction. Present only on entries written through
+   * the thesis gate, so it also marks them: an entry without it predates the
+   * gate and has no real prediction to grade against.
+   */
+  checkBackAt?: string;
   expectedReturn?: number;            // Predicted % return
   expectedTimeframeDays?: number;     // How long to hold
   

@@ -17,7 +17,7 @@ import React, { createContext, useContext, useRef, useState } from 'react';
 import { showAlert } from '../utils/alert';
 import { useSubscriptionStore } from '../services/subscriptionStore';
 import { useUserStore } from '../services/userStore';
-import { useTradeJournalStore, TradeReason, REASON_CONFIG, Confidence } from '../services/tradeJournalStore';
+import { useTradeJournalStore, Prediction, isPredictionFor, checkBackDate } from '../services/tradeJournalStore';
 import { useSkillTreeStore, SKILL_NODES } from '../services/skillTreeStore';
 import { logActivity } from '../services/firestoreSync';
 import { getChallengeForLesson } from '../data/lessonChallenges';
@@ -34,16 +34,31 @@ interface AppFlowValue {
   /** Opens a lesson and remembers to complete the matching skill-tree node. */
   openLessonFromSkillTree: (lessonId: string) => void;
   openStock: (symbol: string) => void;
-  /** Entry point for a trade — runs the mood and decision-journal interceptors. */
+  /**
+   * Entry point for a trade. Buys go through the mood check and then the
+   * prediction form; sells go through the mood check only.
+   */
   openTrade: (symbol: string, action: TradeType) => void;
-  /** Skips the interceptors — for entry points that already collected a reason. */
+  /**
+   * Straight to the Trade screen with no interceptors. Safe for buys only
+   * because the gate doesn't live here: the Trade screen won't enable Buy and
+   * executeTrade won't accept one without a prediction for that symbol.
+   */
   openTradeDirect: (symbol: string, action: TradeType) => void;
   openSubscription: (lockedFeature?: string) => void;
   /** Navigates only if the plan allows it, otherwise shows the paywall. */
   openGated: (route: keyof RootStackParamList, featureKey: string, label: string) => void;
   explain: (term: string) => void;
-  /** The reason the student wrote pre-trade, consumed by the Trade screen. */
-  pendingBuyReason: string | undefined;
+  /**
+   * The prediction written for the buy in progress, bound to one symbol.
+   * Consumers must check the symbol (isPredictionFor) — never assume it
+   * belongs to whatever screen they're on.
+   */
+  pendingPrediction: Prediction | null;
+  /** Opens the prediction form over the Trade screen, without re-navigating. */
+  requestPrediction: (symbol: string) => void;
+  /** Called when the Trade screen is left, so a prediction can't outlive it. */
+  clearPendingPrediction: () => void;
   handleLessonComplete: (lessonId: string, lessonTitle: string) => void;
   /** Backing out of a lesson — forgets that it came from the skill tree. */
   cancelLesson: () => void;
@@ -67,14 +82,21 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
 
   const [explainTerm, setExplainTerm] = useState<string | null>(null);
   const [moodModal, setMoodModal] = useState<{ visible: boolean; symbol: string; pendingTrade?: { symbol: string; action: TradeType } }>({ visible: false, symbol: '' });
-  const [djModal, setDjModal] = useState<{ visible: boolean; symbol: string; action: string; pendingTrade?: { symbol: string; action: TradeType } }>({ visible: false, symbol: '', action: '' });
+  // The prediction form. It's buy-only now, so it carries a symbol rather than
+  // a symbol and action. `stayOnTrade` is set when it's opened from the Trade
+  // screen itself (a student who arrived by URL), so submitting just attaches
+  // the prediction instead of pushing a second Trade screen.
+  const [djModal, setDjModal] = useState<{ visible: boolean; symbol: string; stayOnTrade?: boolean }>({ visible: false, symbol: '' });
 
-  // The thesis a student wrote in the Decision Journal prompt right before a
-  // trade — held here until the trade actually executes, then persisted as a
-  // real JournalEntry tied to that trade's real id. Cleared if they skip the
-  // prompt (nothing to save) or once the trade completes, so it can't leak
-  // into the next trade.
-  const [pendingThesis, setPendingThesis] = useState<{ reason: TradeReason; note: string; confidence: Confidence } | null>(null);
+  // The prediction written for the buy in progress. It carries its own symbol
+  // and is only ever honoured for that symbol (isPredictionFor), and it's
+  // cleared when the Trade screen is left — by any route, see TradeRoute's blur
+  // listener — or once the trade completes.
+  //
+  // Previously this held { reason, note, confidence } with no symbol and was
+  // only cleared on success, so writing a thesis for AAPL, backing out, and
+  // reaching a TSLA trade some other way attached the AAPL thesis to TSLA.
+  const [pendingPrediction, setPendingPrediction] = useState<Prediction | null>(null);
 
   // Which lessonId was opened from the skill tree, so completion can
   // auto-complete that node and route back to the tree.
@@ -107,13 +129,27 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
 
   const openTradeDirect = (symbol: string, action: TradeType) => navigate('Trade', { symbol, action });
 
+  // After the mood check (or instead of it, without the premium feature):
+  // buys need a prediction, sells go straight to the ticket.
+  const continueToTrade = (symbol: string, action: TradeType) => {
+    if (action === 'buy') {
+      setPendingPrediction(null);   // a fresh buy starts with a fresh prediction
+      setDjModal({ visible: true, symbol });
+    } else {
+      openTradeDirect(symbol, action);
+    }
+  };
+
   const openTrade = (symbol: string, action: TradeType) => {
     if (canUseFeature('moodGuard')) {
       setMoodModal({ visible: true, symbol, pendingTrade: { symbol, action } });
     } else {
-      setDjModal({ visible: true, symbol, action, pendingTrade: { symbol, action } });
+      continueToTrade(symbol, action);
     }
   };
+
+  const requestPrediction = (symbol: string) => setDjModal({ visible: true, symbol, stayOnTrade: true });
+  const clearPendingPrediction = () => setPendingPrediction(null);
 
   const handleLessonComplete = (lessonId: string, lessonTitle: string) => {
     const fromSkillTree = skillTreeLessonRef.current === lessonId;
@@ -135,19 +171,22 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
   };
 
   const handleTradeSuccess = (trade?: Trade) => {
-    // Persist the thesis the student wrote in the pre-trade prompt as the one
-    // journal entry for this trade, tied to its real trade id. pendingThesis
-    // is null when the prompt was skipped, or when the trade was placed from
-    // an entry point that doesn't run the interceptors.
-    if (trade && pendingThesis) {
+    // One journal entry per buy, tied to the real trade id, and only from a
+    // prediction written for this exact symbol. The claim and way-to-be-wrong
+    // are already on the Trade record (executeTrade refuses a buy without
+    // them), so if this write were ever lost the prediction still survives.
+    // Sells don't create an entry: they carry no prediction. Grading open
+    // predictions when you sell is a later phase.
+    if (trade && trade.type === 'buy' && isPredictionFor(pendingPrediction, trade.symbol)) {
       createJournalEntry({
         tradeId: trade.id,
         symbol: trade.symbol,
-        action: trade.type,
-        buyReason: pendingThesis.note || REASON_CONFIG[pendingThesis.reason].label,
-        exitPlan: '',
-        reasonCategory: pendingThesis.reason,
-        confidence: pendingThesis.confidence,
+        action: 'buy',
+        buyReason: pendingPrediction.claim,
+        exitPlan: pendingPrediction.falsifier,
+        checkBackAt: checkBackDate(pendingPrediction.checkBack),
+        reasonCategory: pendingPrediction.reasonCategory,
+        confidence: pendingPrediction.confidence,
       });
     }
     if (trade && uid && user) {
@@ -159,7 +198,7 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
         createdAt: new Date().toISOString(),
       }).catch(() => {});
     }
-    setPendingThesis(null);
+    setPendingPrediction(null);
     // Land on the portfolio so the student sees the position they just opened.
     goTab('Portfolio');
   };
@@ -177,7 +216,9 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
     openSubscription,
     openGated,
     explain: setExplainTerm,
-    pendingBuyReason: pendingThesis?.note,
+    pendingPrediction,
+    requestPrediction,
+    clearPendingPrediction,
     handleLessonComplete,
     cancelLesson: () => { skillTreeLessonRef.current = null; },
     handleTradeSuccess,
@@ -188,32 +229,30 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
     <AppFlowContext.Provider value={value}>
       {children}
 
-      {/* ── Interceptors: mood check, then the pre-trade thesis prompt ── */}
+      {/* ── Interceptors: mood check, then (buys only) the prediction form ── */}
       <MoodGuardrailModal
         visible={moodModal.visible}
         symbol={moodModal.symbol}
         onProceed={() => {
           const t = moodModal.pendingTrade;
           setMoodModal({ visible: false, symbol: '' });
-          if (t) setDjModal({ visible: true, symbol: t.symbol, action: t.action, pendingTrade: t });
+          if (t) continueToTrade(t.symbol, t.action);
         }}
         onCancel={() => setMoodModal({ visible: false, symbol: '' })}
       />
       <DecisionJournalModal
         visible={djModal.visible}
         symbol={djModal.symbol}
-        action={djModal.action}
-        onSubmit={(reason, note, confidence) => {
-          const t = djModal.pendingTrade;
-          setPendingThesis({ reason, note, confidence });
-          setDjModal({ visible: false, symbol: '', action: '' });
-          if (t) openTradeDirect(t.symbol, t.action);
+        onSubmit={(prediction) => {
+          const { stayOnTrade } = djModal;
+          setPendingPrediction(prediction);
+          setDjModal({ visible: false, symbol: '' });
+          if (!stayOnTrade) openTradeDirect(prediction.symbol, 'buy');
         }}
-        onSkip={() => {
-          const t = djModal.pendingTrade;
-          setPendingThesis(null);
-          setDjModal({ visible: false, symbol: '', action: '' });
-          if (t) openTradeDirect(t.symbol, t.action);
+        onCancel={() => {
+          // Cancel abandons the buy. No navigation, and nothing left pending.
+          setPendingPrediction(null);
+          setDjModal({ visible: false, symbol: '' });
         }}
       />
 

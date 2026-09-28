@@ -402,15 +402,42 @@ function StockDetailRoute() {
 function TradeRoute() {
   const back = useGoBack();
   const flow = useAppFlow();
+  const navigation = useNavigation();
   const params = useRoute<RouteProp<RootStackParamList, 'Trade'>>().params;
   // The action arrives as a raw string when it comes from a URL.
   const action: TradeType = params.action === 'sell' ? 'sell' : 'buy';
+
+  // A prediction belongs to this one visit to the Trade screen. Clear it the
+  // moment the student leaves — by ANY route: the header back button, the iOS
+  // swipe, the Android back button, the browser's back button on web, or
+  // being covered by another screen.
+  //
+  // This listens for `blur` (the screen losing focus), not `beforeRemove`
+  // (the screen leaving the stack). The first version used beforeRemove and
+  // the browser test caught it: a student who arrives by URL has only this
+  // screen on the stack, so Back can't pop it and calls goTab('Learn')
+  // instead — which pushes the tabs ON TOP of Trade. Trade is covered, never
+  // removed, so beforeRemove never fired, and returning to the same ticket
+  // brought the old prediction back with it. blur fires in that case and in
+  // every removal case. It does not fire for the prediction form, the
+  // behaviour coach or alerts, which are modals over this screen, not
+  // navigation.
+  //
+  // clearPendingPrediction only calls a state setter, so the closure captured
+  // here stays correct across renders.
+  const { clearPendingPrediction } = flow;
+  React.useEffect(
+    () => navigation.addListener('blur', () => clearPendingPrediction()),
+    [navigation],
+  );
+
   return (
     <TradeScreen
       symbol={params.symbol}
       action={action}
       onBack={back}
-      buyReason={flow.pendingBuyReason}
+      prediction={flow.pendingPrediction}
+      onRequestPrediction={() => flow.requestPrediction(params.symbol)}
       onTradeSuccess={flow.handleTradeSuccess}
     />
   );

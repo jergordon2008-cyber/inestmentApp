@@ -15,6 +15,7 @@ import { BehaviorCoachModal, BehaviorBias } from '../components/BehaviorCoachMod
 import { Ionicons } from '@expo/vector-icons';
 import { logEvent } from '../services/analyticsService';
 import { changeCaret, changeColor, changeTone } from '../utils/change';
+import { Prediction, isPredictionFor } from '../services/tradeJournalStore';
 
 /**
  * How far the live price may drift from the price the student was shown and
@@ -28,11 +29,13 @@ interface Props {
   action: TradeType;
   onBack: () => void;
   onTradeSuccess: (trade?: Trade) => void;
-  buyReason?: string;
-  exitPlan?: string;
+  /** The pending prediction, if any. Only honoured when it's for this symbol. */
+  prediction?: Prediction | null;
+  /** Opens the prediction form over this screen. */
+  onRequestPrediction?: () => void;
 }
 
-export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess, buyReason, exitPlan }: Props) {
+export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess, prediction, onRequestPrediction }: Props) {
   const { theme } = useTheme();
   const user = useUserStore(s => s.user);
   const portfolio = usePortfolioStore(s => s.portfolio);
@@ -96,7 +99,13 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
   const hasEnoughCash = action === 'buy' ? cash >= totalCost : true;
   const hasEnoughShares = action === 'sell' ? (position?.shares ?? 0) >= shares : true;
   const validShares = shares > 0;
-  const canSubmit = validShares && hasEnoughCash && hasEnoughShares && submitPhase === 'idle';
+  // Thesis gate. A buy needs a prediction written for THIS symbol — checked
+  // against `action` state, not the route's initial action, since the
+  // Buy/Sell toggle below can turn a sell ticket into a buy. The same check
+  // runs again in executeTrade, so this is the visible lock, not the only one.
+  const predictionForThis = isPredictionFor(prediction, symbol) ? prediction : null;
+  const needsPrediction = action === 'buy' && !predictionForThis;
+  const canSubmit = validShares && hasEnoughCash && hasEnoughShares && submitPhase === 'idle' && !needsPrediction;
 
   const quickAmounts = action === 'buy'
     ? [250, 500, 1000, 2500].map(d => ({ label: `$${d}`, val: String((d / price).toFixed(4)) }))
@@ -115,12 +124,17 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
     if (!fillStock || !user || !portfolio) return;
     setSubmitPhase('submitting');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // For a buy, the claim rides in buyReason and the way-to-be-wrong in
+    // exitPlan, which executeTrade validates and stores on the Trade record.
+    // Sells carry neither.
     const result = executeTrade({
       symbol, type: action, shares: fillShares, pricePerShare: fillPrice,
-      stock: fillStock, userTier: user.currentTier, buyReason, exitPlan,
+      stock: fillStock, userTier: user.currentTier,
+      buyReason: action === 'buy' ? predictionForThis?.claim : undefined,
+      exitPlan: action === 'buy' ? predictionForThis?.falsifier : undefined,
     });
     if (result.success) {
-      logEvent('trade_submitted', { symbol, side: action, has_thesis: !!buyReason });
+      logEvent('trade_submitted', { symbol, side: action, has_thesis: action === 'buy' });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showAlert(
         action === 'buy' ? '✅ Order Filled' : '✅ Sold',
@@ -344,6 +358,32 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
 
       {/* Submit */}
       <View style={[s.footer, { backgroundColor: theme.colors.background, borderTopColor: theme.colors.border }]}>
+        {needsPrediction && (
+          // Reached when a student lands here without writing one — most
+          // often by URL (stocks/:symbol/buy), or by switching a sell ticket
+          // to Buy. Buy stays disabled; this is the way forward.
+          <View style={[s.noticeRow, { backgroundColor: theme.colors.primary + '14', borderColor: theme.colors.primary + '40' }]}>
+            <Ionicons name="create-outline" size={15} color={theme.colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[s.noticeText, { color: theme.colors.primary }]}>
+                Write your prediction first. You need one before you can buy {symbol}.
+              </Text>
+              {onRequestPrediction && (
+                <TouchableOpacity onPress={onRequestPrediction} style={s.predictBtn} accessibilityRole="button">
+                  <Text style={{ color: theme.colors.primary, fontWeight: '800', fontSize: 13 }}>Write prediction ›</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        )}
+        {action === 'buy' && predictionForThis && (
+          <View style={[s.noticeRow, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <Ionicons name="checkmark-circle-outline" size={15} color={theme.colors.success} />
+            <Text style={[s.noticeText, { color: theme.colors.textSecondary }]} numberOfLines={2}>
+              Your prediction: {predictionForThis.claim}
+            </Text>
+          </View>
+        )}
         {quoteIssue?.kind === 'unavailable' && (
           <View style={[s.noticeRow, { backgroundColor: theme.colors.danger + '14', borderColor: theme.colors.danger + '40' }]}>
             <Ionicons name="cloud-offline-outline" size={15} color={theme.colors.danger} />
@@ -424,6 +464,7 @@ const styles = (theme: any) => StyleSheet.create({
   footer: { paddingHorizontal: 20, paddingVertical: 14, paddingBottom: 28, borderTopWidth: 1 },
   noticeRow:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10 },
   noticeText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  predictBtn: { marginTop: 6, alignSelf: 'flex-start', paddingVertical: 2 },
   submitBtn: { paddingVertical: 16, borderRadius: 16, alignItems: 'center' },
   submitText: { fontSize: 16, fontWeight: '800', color: '#07070D' },
 });

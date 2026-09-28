@@ -20,6 +20,24 @@ import { initAnalyticsLifecycle, startNewSession, logScreenView, flushScreenBuff
 import { useTradeJournalStore } from './src/services/tradeJournalStore';
 import { initializeLivePrices } from './src/services/stockDataService';
 import { TourGuide } from './src/components/TourGuide';
+import { reconcilePortfolio, savePortfolioBackups, ReconcileResult } from './src/services/portfolioReconcile';
+import type { Portfolio } from './src/types';
+
+/**
+ * Resolves once the portfolio store has loaded from device storage.
+ * Reconciliation has to read the device copy, and reading it before it has
+ * loaded sees nothing — worse, the copy then lands afterwards and silently
+ * overwrites whatever reconciliation decided.
+ */
+function waitForPortfolioHydration(): Promise<void> {
+  const p = usePortfolioStore.persist;
+  if (p.hasHydrated()) return Promise.resolve();
+  return new Promise(resolve => {
+    const unsub = p.onFinishHydration(() => { unsub(); resolve(); });
+    // Re-check after subscribing, in case hydration finished in between.
+    if (p.hasHydrated()) { unsub(); resolve(); }
+  });
+}
 
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { AppFlowProvider } from './src/navigation/AppFlow';
@@ -53,6 +71,53 @@ function AppContent() {
   const [authName, setAuthName] = useState<string>('');
   const [needsNamePrompt, setNeedsNamePrompt] = useState(false);
   const [restoringSession, setRestoringSession] = useState(true);
+
+  /**
+   * The account whose portfolio may be saved to the cloud. Null until the
+   * device and cloud copies have been reconciled for it.
+   *
+   * The portfolio save effect used to fire on the first render that had both
+   * a uid and a portfolio — i.e. before the cloud copy had even been read. It
+   * pushed the device copy up unconditionally on every launch. That happened
+   * to rescue trades the cloud had missed, but when the cloud was AHEAD (the
+   * student traded on another device) it overwrote the newer cloud copy with
+   * the stale device one, and the Firestore SDK then layered that pending
+   * write over the cloud read, so nothing downstream could even tell. Saving
+   * now waits for this, which is set only once reconciliation has decided.
+   */
+  const [portfolioReadyFor, setPortfolioReadyFor] = useState<string | null>(null);
+  const lastSyncedTradeCount = useRef<number | null>(null);
+
+  /**
+   * Reads the device copy (once loaded), reconciles it against the cloud
+   * copy, and keeps any copy that loses. Throws if a backup can't be written,
+   * so a copy is never discarded that couldn't be kept.
+   */
+  const resolvePortfolio = async (forUid: string, cloud: Portfolio | null): Promise<ReconcileResult> => {
+    await waitForPortfolioHydration();
+    const device = usePortfolioStore.getState().portfolio;
+    const result = reconcilePortfolio(device, cloud, forUid);
+    if (result.backups.length > 0) {
+      await savePortfolioBackups(result.backups);
+      console.warn('[portfolio] kept on this device:', result.backups.map(b => b.reason));
+    }
+    return result;
+  };
+
+  /** Applies a reconcile result and opens the account for saving. */
+  const adoptPortfolio = (forUid: string, result: ReconcileResult) => {
+    if (result.portfolio) {
+      setPortfolio(result.portfolio);
+    } else if (usePortfolioStore.getState().portfolio) {
+      // Only reachable when the device held another user's copy and this
+      // account has none. That copy is already backed up; stop showing it.
+      resetPortfolio();
+    }
+    // pushToCloud: leave the counter unset so the save effect sends it.
+    // Otherwise mark it as already in sync so nothing is re-sent.
+    lastSyncedTradeCount.current = result.pushToCloud ? null : (result.portfolio?.trades.length ?? null);
+    setPortfolioReadyFor(forUid);
+  };
   const [isAdminUser, setIsAdminUser] = useState(false);
   const setAdminOverride = useSubscriptionStore(s => s.setAdminOverride);
 
@@ -109,12 +174,23 @@ function AppContent() {
           loadJournal(fbUser.uid),
         ]);
         if (profile) {
+          // Reconcile BEFORE the other updates, so the render that follows
+          // sees the settled portfolio. This replaced "cloud wins", which
+          // erased every trade the cloud had missed.
+          const decision = await resolvePortfolio(fbUser.uid, remotePortfolio);
+          adoptPortfolio(fbUser.uid, decision);
           setUser(profile);
           setOnboarded(true);
-          if (remotePortfolio) setPortfolio(remotePortfolio);
           setJournalEntries(entries);
+        } else {
+          // Signed up but never finished onboarding: there's no portfolio to
+          // reconcile yet, and onboarding is about to create one.
+          adoptPortfolio(fbUser.uid, await resolvePortfolio(fbUser.uid, null));
         }
       } catch (e) {
+        // Deliberately NOT marked ready. If the cloud copy couldn't be read,
+        // pushing the device copy could overwrite something newer. It stays
+        // safe on this device and reconciles on the next launch that loads.
         console.warn('[auth] Failed to restore session from Firestore', e);
       }
       setRestoringSession(false);
@@ -146,9 +222,12 @@ function AppContent() {
   // 60 concurrent students. Trade-driven syncing is 100-1000x less frequent
   // and still keeps the leaderboard/admin view accurate at the moments that
   // matter (right after a buy/sell).
-  const lastSyncedTradeCount = useRef<number | null>(null);
   useEffect(() => {
     if (!uid || !portfolio) return;
+    // Nothing is saved until this account has been reconciled (see
+    // portfolioReadyFor), and never a portfolio belonging to someone else.
+    if (portfolioReadyFor !== uid) return;
+    if (portfolio.userId !== uid) return;
     const tradeCount = portfolio.trades.length;
     if (lastSyncedTradeCount.current === tradeCount) return;
     lastSyncedTradeCount.current = tradeCount;
@@ -164,7 +243,7 @@ function AppContent() {
         currentTier: user.currentTier,
       }).catch(() => {});
     }
-  }, [uid, portfolio]);
+  }, [uid, portfolio, portfolioReadyFor]);
 
   // Even without a new trade, resync public_stats (cheap, single small doc)
   // roughly every 5 minutes so the leaderboard reflects live price moves —
@@ -249,6 +328,7 @@ function AppContent() {
     signOutUser().catch(() => {});
     setUid(null);
     setAuthEmail('');
+    setPortfolioReadyFor(null);
     logout();
     resetPortfolio();
     setJournalEntries([]);
@@ -258,6 +338,7 @@ function AppContent() {
     signOutUser().catch(() => {});
     setUid(null);
     setAuthEmail('');
+    setPortfolioReadyFor(null);
     logout();
     resetPortfolio();
     setJournalEntries([]);
@@ -275,9 +356,10 @@ function AppContent() {
         loadJournal(loggedInUid),
       ]);
       if (profile) {
+        const decision = await resolvePortfolio(loggedInUid, remotePortfolio);
+        adoptPortfolio(loggedInUid, decision);
         setUser(profile);
         setOnboarded(true);
-        if (remotePortfolio) setPortfolio(remotePortfolio);
         setJournalEntries(entries);
         // Legacy accounts (created before the name field existed, or whose
         // name was auto-derived from their email) get a one-time prompt
@@ -285,6 +367,7 @@ function AppContent() {
         if (!profile.hasCustomDisplayName) setNeedsNamePrompt(true);
       } else {
         // Account exists in Auth but never finished onboarding.
+        adoptPortfolio(loggedInUid, await resolvePortfolio(loggedInUid, null));
         navigate('Onboarding');
       }
     } catch (e) {
@@ -297,6 +380,12 @@ function AppContent() {
       setUid(newUid);
       setAuthEmail(email);
       setAuthName(name ?? '');
+      // A new account has no cloud portfolio. Reconciling against nothing
+      // still matters: if this device was left holding another student's
+      // copy, it's backed up here instead of overwritten by onboarding.
+      resolvePortfolio(newUid, null)
+        .then(decision => adoptPortfolio(newUid, decision))
+        .catch(e => console.warn('[signup] could not back up an existing device portfolio', e));
     },
     onLoginAuthed: handleLoginAuthed,
     onOnboardingComplete: handleOnboardingComplete,

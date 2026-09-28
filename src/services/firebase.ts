@@ -13,7 +13,7 @@
 
 import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
-import { getFirestore, Firestore } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, Firestore } from 'firebase/firestore';
 import { getFunctions, Functions } from 'firebase/functions';
 
 export const FIREBASE_CONFIG = {
@@ -52,7 +52,27 @@ export function getFirebaseDb(): Firestore | null {
   if (!FIREBASE_ENABLED) return null;
   const a = getFirebaseApp();
   if (!a) return null;
-  if (!dbInstance) dbInstance = getFirestore(a);
+  if (!dbInstance) {
+    // ignoreUndefinedProperties: drop `undefined` fields instead of refusing
+    // the whole write. Without it, one optional field left undefined anywhere
+    // in a document — trades set triggeredBySignal/triggeredByLesson that way
+    // on every single trade — made setDoc throw "Unsupported field value:
+    // undefined", and the save's empty catch swallowed it. Trades only reached
+    // the cloud on the NEXT app launch, when the copy reloaded from device
+    // storage (JSON, which strips undefined) happened to save. Set on the
+    // instance rather than stripped per save so it covers every write in the
+    // app, including ones not written yet. Dropping the field is also the
+    // right meaning: undefined here means "not set".
+    try {
+      dbInstance = initializeFirestore(a, { ignoreUndefinedProperties: true });
+    } catch {
+      // initializeFirestore throws if this app's Firestore already exists —
+      // only reachable when a dev hot-reload re-evaluates this module. The
+      // existing instance was created by the call above, so it already has
+      // the setting.
+      dbInstance = getFirestore(a);
+    }
+  }
   return dbInstance;
 }
 

@@ -1209,7 +1209,7 @@ export const tier2Lessons: Lesson[] = [
             'Brokerages don\'t allow you to invest without a retirement account first',
           ],
           correctIndex: 1,
-          explanation: 'The $43,000 difference from the example shows: taxes are the single biggest drag on long-term compounding. Eliminating or deferring them in retirement accounts has an enormous effect.',
+          explanation: 'The $43,000 difference in the example comes from taxes alone. Like the fund fees in the Bogle lesson, taxes are a cost that compounds against you every year. Retirement accounts defer or remove that cost, so money that would have gone to taxes keeps compounding for you instead.',
         },
       ],
     },

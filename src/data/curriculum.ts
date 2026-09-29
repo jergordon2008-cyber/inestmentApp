@@ -207,7 +207,7 @@ export const tier1Lessons: Lesson[] = [
         id: 'T1L02S7b',
         type: 'example',
         title: 'Jack Bogle\'s radical idea — and why it works',
-        content: 'In 1975, Jack Bogle launched the first index fund. Wall Street laughed. Why would anyone settle for "just average" returns? His argument: most actively managed funds underperform the market after fees. And those fees — even 1% per year — compound into enormous losses over decades.\n\nBogle\'s math: on a $100K investment over 30 years at 7% growth, a 1% annual fee costs you $176,277 in total wealth compared to a 0.05% index fund fee. You don\'t lose 1%. You lose $176K.\n\nToday Vanguard manages over $8 trillion using Bogle\'s philosophy. His core rule: "Don\'t do something, just stand there." The enemy of long-term returns is not the market — it\'s fees and unnecessary trading.',
+        content: 'In 1975, Jack Bogle launched the first index fund. Wall Street laughed. Why would anyone settle for "just average" returns? His argument: most actively managed funds underperform the market after fees. And those fees — even 1% per year — compound into enormous losses over decades.\n\nBogle\'s math: on a $100K investment over 30 years at 7% growth, a 1% annual fee costs you $176,277 in total wealth compared to a 0.05% index fund fee. You don\'t lose 1%. You lose $176K.\n\nToday Vanguard manages over $8 trillion using Bogle\'s philosophy. His core rule: "Don\'t do something, just stand there." As Bogle saw it, the enemy of long-term returns isn\'t the market — it\'s the costs you can control, like fees and unnecessary trading.',
       },
       {
         id: 'T1L02S7',

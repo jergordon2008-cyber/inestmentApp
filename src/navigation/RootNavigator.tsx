@@ -225,6 +225,7 @@ function MeHomeRoute() {
     <ProfileScreen
       onSignOut={auth.onSignOut}
       onRestartOnboarding={auth.onRestartOnboarding}
+      onReplayTourPress={auth.onReplayTour}
       onJournalPress={() => goTab('Portfolio', 'TradeJournal')}
       onClassroomPress={() => nav.navigate('Classroom')}
       onPrivacyPress={() => nav.navigate('Legal', { kind: 'privacy' })}

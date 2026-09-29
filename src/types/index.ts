@@ -34,9 +34,14 @@ export interface User {
   experienceLevel: 'none' | 'beginner' | 'some' | 'experienced';
   primaryGoal: 'retirement' | 'wealth_building' | 'education' | 'income';
   
-  // Engagement
-  streak: number;                    // consecutive days
-  lastActiveDate: string;            // ISO date
+  // Engagement — the daily streak (rules in services/dailyStreak.ts).
+  // Saved with the profile, so it reaches the cloud through the guarded
+  // profile save. The three optional fields arrived later; absent = 0.
+  streak: number;                    // consecutive qualifying days (as of lastActiveDate)
+  lastActiveDate: string;            // local 'YYYY-MM-DD' of the last qualifying day; '' if never
+  longestStreak?: number;
+  freezesAvailable?: number;
+  totalDaysActive?: number;
   totalLessonsWatched: number;
   totalTradesExecuted: number;
   

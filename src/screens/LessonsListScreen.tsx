@@ -17,9 +17,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { useUserStore } from '../services/userStore';
+import { useUserStore, useCurrentStreak } from '../services/userStore';
 import { useSkillTreeStore } from '../services/skillTreeStore';
-import { useStreakStore } from '../services/streakStore';
 import { useSubscriptionStore } from '../services/subscriptionStore';
 import { tier1Lessons } from '../data/curriculum';
 import { tier2Lessons } from '../data/tier2curriculum';
@@ -164,7 +163,7 @@ export function LessonsListScreen({ onLessonPress, onSkillTreePress, onSubscribe
   const { theme }  = useTheme();
   const user       = useUserStore(s => s.user);
   const { xp, level, completedNodes } = useSkillTreeStore();
-  const streak     = useStreakStore(s => s.currentStreak);
+  const streak     = useCurrentStreak();
   const canUseFeature = useSubscriptionStore(s => s.canUseFeature);
   const completed  = user?.lessonsCompleted ?? [];
 

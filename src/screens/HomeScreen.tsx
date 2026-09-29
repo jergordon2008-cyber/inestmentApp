@@ -6,9 +6,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { useUserStore } from '../services/userStore';
+import { useUserStore, useCurrentStreak } from '../services/userStore';
 import { usePortfolioStore } from '../services/portfolioStore';
-import { useStreakStore } from '../services/streakStore';
 import { AnimatedPressable } from '../components/AnimatedPressable';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { CompanyLogo } from '../components/CompanyLogo';
@@ -21,6 +20,8 @@ import { changeCaret, changeColor, changeSign } from '../utils/change';
 import { SyncBanner } from '../components/SyncBanner';
 import { useTradeJournalStore } from '../services/tradeJournalStore';
 import { duePredictions } from '../services/predictionGrading';
+import { useStreakStore, selectMicroLessonReadToday, getTodaysMicroLesson } from '../services/streakStore';
+import { localDay } from '../services/dailyStreak';
 
 const ALL_LESSONS = [...tier1Lessons, ...tier2Lessons, ...tier3Lessons];
 
@@ -72,10 +73,13 @@ export function HomeScreen({
   const { theme } = useTheme();
   const user        = useUserStore(s => s.user);
   const portfolio   = usePortfolioStore(s => s.portfolio);
-  const streak      = useStreakStore(s => s.currentStreak);
+  const streak      = useCurrentStreak();
   const journal     = useTradeJournalStore(s => s.entries);
   // Predictions past their check-back date and not yet graded.
   const dueCount    = useMemo(() => duePredictions(journal, new Date()).length, [journal]);
+  const doneToday   = user?.lastActiveDate === localDay();
+  const microDoneToday = useStreakStore(selectMicroLessonReadToday);
+  const todaysMicro = useMemo(() => getTodaysMicroLesson(), []);
 
   const nextLesson = useMemo(() =>
     ALL_LESSONS.find(l => !user?.lessonsCompleted.includes(l.id)), [user]);
@@ -129,24 +133,54 @@ export function HomeScreen({
           </View>
         </SlideUp>
 
-        {/* ── Predictions ready to grade ── */}
-        {dueCount > 0 && (
+        {/* ── Today: the daily loop ── */}
+        {/* Every row is the student's own real state; nothing is shown that
+            isn't there. A day counts once one qualifying action is done: a
+            finished lesson, today's Market Minute, or a graded prediction. */}
+        {user && (
           <SlideUp delay={40}>
-            <AnimatedPressable
-              onPress={onJournalPress}
-              style={[s.gradePrompt, { backgroundColor: theme.colors.gold + '14', borderColor: theme.colors.gold + '40' }]}
-            >
-              <Ionicons name="checkmark-done-outline" size={20} color={theme.colors.gold} />
-              <View style={{ flex: 1 }}>
-                <Text style={[s.gradePromptTitle, { color: theme.colors.textPrimary }]}>
-                  {dueCount === 1 ? '1 prediction is ready to grade' : `${dueCount} predictions are ready to grade`}
-                </Text>
-                <Text style={[s.gradePromptBody, { color: theme.colors.textSecondary }]}>
-                  {dueCount === 1 ? 'Its check-back date has arrived.' : 'Their check-back dates have arrived.'} Did what you predicted happen?
-                </Text>
+            <View style={[s.today, { backgroundColor: theme.colors.surface, borderColor: doneToday ? theme.colors.success + '40' : theme.colors.border }]}>
+              <View style={s.todayHeader}>
+                <Text style={[s.todayLabel, { color: theme.colors.textTertiary }]}>TODAY</Text>
+                {doneToday && <Ionicons name="checkmark-circle" size={16} color={theme.colors.success} />}
               </View>
-              <Ionicons name="chevron-forward" size={18} color={theme.colors.textTertiary} />
-            </AnimatedPressable>
+
+              <AnimatedPressable onPress={onMicroLessonPress} style={s.todayRow}>
+                <Ionicons
+                  name={microDoneToday ? 'checkmark-circle' : 'ellipse-outline'}
+                  size={20}
+                  color={microDoneToday ? theme.colors.success : theme.colors.textTertiary}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.todayRowTitle, { color: theme.colors.textPrimary }]}>Today's Market Minute</Text>
+                  <Text style={[s.todayRowSub, { color: theme.colors.textSecondary }]} numberOfLines={1}>{todaysMicro.title}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={theme.colors.textTertiary} />
+              </AnimatedPressable>
+
+              {dueCount > 0 && (
+                <AnimatedPressable onPress={onJournalPress} style={s.todayRow}>
+                  <Ionicons name="ellipse-outline" size={20} color={theme.colors.gold} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.todayRowTitle, { color: theme.colors.textPrimary }]}>
+                      {dueCount === 1 ? '1 prediction is ready to grade' : `${dueCount} predictions are ready to grade`}
+                    </Text>
+                    <Text style={[s.todayRowSub, { color: theme.colors.textSecondary }]}>
+                      {dueCount === 1 ? 'Its check-back date has arrived.' : 'Their check-back dates have arrived.'} Did what you predicted happen?
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.colors.textTertiary} />
+                </AnimatedPressable>
+              )}
+
+              <Text style={[s.todayFooter, { color: doneToday ? theme.colors.success : theme.colors.textSecondary }]}>
+                {doneToday
+                  ? `Done for today. Come back tomorrow for day ${streak + 1}.`
+                  : streak > 0
+                    ? `Finish one of these, or a lesson, to keep your ${streak}-day streak.`
+                    : 'Finish one of these, or a lesson, to start a streak today.'}
+              </Text>
+            </View>
           </SlideUp>
         )}
 
@@ -433,9 +467,13 @@ function StatCard({ label, val, icon, color, theme }: { label: string; val: stri
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  gradePrompt: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 14 },
-  gradePromptTitle: { fontSize: 14, fontWeight: '700' },
-  gradePromptBody: { fontSize: 12, lineHeight: 17, marginTop: 2 },
+  today: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 12, marginBottom: 14 },
+  todayHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  todayLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+  todayRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 9 },
+  todayRowTitle: { fontSize: 14, fontWeight: '700' },
+  todayRowSub: { fontSize: 12, lineHeight: 17, marginTop: 1 },
+  todayFooter: { fontSize: 12, lineHeight: 17, marginTop: 6, fontWeight: '600' },
   container: { flex: 1 },
   scroll:    { paddingBottom: 24 },
 

@@ -16,6 +16,8 @@ export interface AuthActions {
   onOnboardingComplete: (answers: OnboardingAnswers) => void;
   onSignOut: () => void;
   onRestartOnboarding: () => void;
+  /** Shows the first-run tour again (Me → Replay app tour). */
+  onReplayTour: () => void;
   isAdmin: boolean;
 }
 

@@ -24,6 +24,9 @@ import { reconcilePortfolio, savePortfolioBackups, ReconcileResult, isSameOwner 
 import { reconcileJournal, saveJournalBackups, JournalReconcileResult } from './src/services/journalReconcile';
 import { requestSave, resetSync, setSyncAccount, loadUnsavedFlags, useSyncStatusStore, selectHasUnsaved } from './src/services/syncStatus';
 import { predictionActivity } from './src/services/predictionGrading';
+import { streakFieldsOf, currentStreak, localDay, reconcileStreak, fromLegacyStreakStore, StreakFields } from './src/services/dailyStreak';
+import { useStreakStore } from './src/services/streakStore';
+import type { User } from './src/types';
 import type { Portfolio } from './src/types';
 
 /**
@@ -81,7 +84,8 @@ function writePublicStats(forUid: string): Promise<void> {
     totalValue: portfolio?.totalValue ?? 100000,
     totalReturnPercent: portfolio?.totalReturnPercent ?? 0,
     lessonsCompletedCount: user.lessonsCompleted.length,
-    streak: user.streak,
+    // As it stands today — a lapsed streak shows 0, not its last value.
+    streak: currentStreak(streakFieldsOf(user), localDay()),
     currentTier: user.currentTier,
   });
 }
@@ -208,6 +212,32 @@ function AppContent() {
     return result;
   };
 
+  /**
+   * The streak to keep when the cloud profile arrives (dailyStreak's
+   * reconcileStreak). Profiles load cloud-wins, which would erase a streak
+   * day recorded here but not yet saved. Candidates, each only if it's this
+   * account's: the local user (same id), and — once per account — the
+   * retired device-only streak, if this device's portfolio belongs to the
+   * account (the rule the journal uses). Must run BEFORE adoptPortfolio,
+   * which replaces the device portfolio it reads. The result is saved by
+   * the ordinary guarded profile save when setUser runs.
+   */
+  const resolveStreak = async (forUid: string, profile: User, cloudPortfolio: Portfolio | null): Promise<User> => {
+    await Promise.all([waitForHydration(useUserStore.persist), waitForHydration(useStreakStore.persist), waitForHydration(usePortfolioStore.persist)]);
+    const candidates: StreakFields[] = [];
+    const local = useUserStore.getState().user;
+    if (local && local.id === forUid) candidates.push(streakFieldsOf(local));
+    const legacy = useStreakStore.getState();
+    const devicePortfolio = usePortfolioStore.getState().portfolio;
+    if (!legacy.migratedTo.includes(forUid) && devicePortfolio && isSameOwner(devicePortfolio.userId, forUid, cloudPortfolio)) {
+      const fields = fromLegacyStreakStore(legacy);
+      if (fields) candidates.push(fields);
+      legacy.markLegacyMigrated(forUid);
+    }
+    const { fields, changed } = reconcileStreak(streakFieldsOf(profile), candidates);
+    return changed ? { ...profile, ...fields } : profile;
+  };
+
   const adoptJournal = (forUid: string, result: JournalReconcileResult) => {
     setJournalEntries(result.entries, forUid);
     const unsavedLastSession = useSyncStatusStore.getState().unsaved.journal === forUid;
@@ -301,8 +331,9 @@ function AppContent() {
           // erased every trade the cloud had missed.
           const decision = await resolvePortfolio(fbUser.uid, remotePortfolio);
           const journalDecision = await resolveJournal(fbUser.uid, entries, remotePortfolio);
+          const withStreak = await resolveStreak(fbUser.uid, profile, remotePortfolio);
           adoptPortfolio(fbUser.uid, decision);
-          setUser(profile);
+          setUser(withStreak);
           setOnboarded(true);
           adoptJournal(fbUser.uid, journalDecision);
         } else {
@@ -494,8 +525,9 @@ function AppContent() {
       if (profile) {
         const decision = await resolvePortfolio(loggedInUid, remotePortfolio);
         const journalDecision = await resolveJournal(loggedInUid, entries, remotePortfolio);
+        const withStreak = await resolveStreak(loggedInUid, profile, remotePortfolio);
         adoptPortfolio(loggedInUid, decision);
-        setUser(profile);
+        setUser(withStreak);
         setOnboarded(true);
         adoptJournal(loggedInUid, journalDecision);
         // Legacy accounts (created before the name field existed, or whose
@@ -534,6 +566,7 @@ function AppContent() {
     onOnboardingComplete: handleOnboardingComplete,
     onSignOut: handleSignOut,
     onRestartOnboarding: handleRestartOnboarding,
+    onReplayTour: () => setShowTour(true),
     isAdmin: isAdminUser,
   };
 

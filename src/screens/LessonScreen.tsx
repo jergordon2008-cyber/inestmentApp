@@ -22,7 +22,6 @@ import { Ionicons } from '@expo/vector-icons';
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 import { useTheme } from '../context/ThemeContext';
 import { useUserStore } from '../services/userStore';
-import { useStreakStore } from '../services/streakStore';
 import { useSkillTreeStore } from '../services/skillTreeStore';
 import { LessonCompleteAnimation } from '../components/LessonCompleteAnimation';
 import { getInlineQuestions } from '../data/lessonInlineQuestions';
@@ -415,7 +414,8 @@ function ProgressBar({ progress, theme }: { progress: number; theme: any }) {
 export function LessonScreen({ lesson, onBack, onLessonComplete }: Props) {
   const { theme } = useTheme();
   const completeLesson = useUserStore(s => s.completeLesson);
-  const recordActivity = useStreakStore(s => s.recordActivity);
+  // A finished lesson is one of the day's qualifying actions (dailyStreak).
+  const recordActivity = useUserStore(s => s.recordActivity);
   const addXP = useSkillTreeStore(s => s.addXP);
   const s = styles(theme);
 

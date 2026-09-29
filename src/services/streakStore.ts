@@ -1,24 +1,24 @@
 /**
- * Streak Store
- * 
- * Manages the daily engagement system:
- * - Streaks (consecutive days active)
- * - Daily micro-lessons (3-minute "Market Minutes")
- * - Streak freezes (powerups to maintain streak)
- * - Last activity tracking
- * 
- * This is the engagement engine. Without daily streaks, users drop off
- * between full lessons. Duolingo's data shows streaks 5x retention.
+ * Streak Store — now only the Market Minute's device state, plus the retired
+ * streak fields kept for a one-time migration.
+ *
+ * The daily streak moved to the user profile (services/dailyStreak.ts):
+ * here it was device-only, belonged to no account (it carried over to the
+ * next account on the device), counted UTC days, and never reached the cloud.
+ * currentStreak / longestStreak / lastActiveDate / freezesAvailable /
+ * totalDaysActive are no longer written; App.tsx reads them once per account
+ * (fromLegacyStreakStore) when this device's portfolio belongs to that
+ * account, and records `migratedTo` so it never happens twice.
  */
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { logEvent } from './analyticsService';
+import { localDay } from './dailyStreak';
 
 export interface MicroLesson {
   id: string;
-  date: string;              // ISO date 'YYYY-MM-DD'
+  date: string;              // local 'YYYY-MM-DD'
   title: string;
   contentMarkdown: string;
   estimatedReadSeconds: number;
@@ -27,40 +27,26 @@ export interface MicroLesson {
 }
 
 interface StreakState {
+  // Retired streak fields — read once for migration, never written.
   currentStreak: number;
   longestStreak: number;
-  lastActiveDate: string | null;      // ISO date 'YYYY-MM-DD'
+  lastActiveDate: string | null;
   freezesAvailable: number;
   totalDaysActive: number;
+  /** uids this device's legacy streak has already been migrated into. */
+  migratedTo: string[];
+
+  // Market Minute
   microLessonsRead: string[];          // IDs of completed micro-lessons
-  todaysMicroLessonRead: boolean;
-  
-  // Actions
-  recordActivity: () => StreakUpdate;
-  useFreezeToken: () => boolean;
+  /** Local day the Market Minute was last finished on this device. */
+  microLessonReadOn: string | null;
+
   markMicroLessonRead: (lessonId: string) => void;
-  resetStreak: () => void;
-  earnFreeze: () => void;
+  markLegacyMigrated: (uid: string) => void;
 }
 
-interface StreakUpdate {
-  newStreak: number;
-  isNewRecord: boolean;
-  isFirstToday: boolean;
-  streakBroken: boolean;
-  daysSinceLastActive: number;
-}
-
-function getToday(): string {
-  return new Date().toISOString().split('T')[0];
-}
-
-function getDaysBetween(date1: string, date2: string): number {
-  const d1 = new Date(date1);
-  const d2 = new Date(date2);
-  const diff = Math.abs(d2.getTime() - d1.getTime());
-  return Math.floor(diff / (1000 * 60 * 60 * 24));
-}
+/** Whether today's Market Minute is already done on this device. */
+export const selectMicroLessonReadToday = (s: StreakState) => s.microLessonReadOn === localDay();
 
 export const useStreakStore = create<StreakState>()(
   persist(
@@ -70,133 +56,21 @@ export const useStreakStore = create<StreakState>()(
       lastActiveDate: null,
       freezesAvailable: 0,
       totalDaysActive: 0,
+      migratedTo: [],
       microLessonsRead: [],
-      todaysMicroLessonRead: false,
-      
-      recordActivity: () => {
-        const state = get();
-        const today = getToday();
-        
-        // Already recorded activity today
-        if (state.lastActiveDate === today) {
-          return {
-            newStreak: state.currentStreak,
-            isNewRecord: false,
-            isFirstToday: false,
-            streakBroken: false,
-            daysSinceLastActive: 0,
-          };
-        }
-        
-        // First time ever
-        if (!state.lastActiveDate) {
-          const newStreak = 1;
-          set({
-            currentStreak: newStreak,
-            longestStreak: 1,
-            lastActiveDate: today,
-            totalDaysActive: 1,
-            todaysMicroLessonRead: false,
-          });
-          return {
-            newStreak,
-            isNewRecord: true,
-            isFirstToday: true,
-            streakBroken: false,
-            daysSinceLastActive: 0,
-          };
-        }
-        
-        const daysSince = getDaysBetween(state.lastActiveDate, today);
-        
-        // Continuing streak (yesterday)
-        if (daysSince === 1) {
-          const newStreak = state.currentStreak + 1;
-          const isNewRecord = newStreak > state.longestStreak;
-          set({
-            currentStreak: newStreak,
-            longestStreak: Math.max(newStreak, state.longestStreak),
-            lastActiveDate: today,
-            totalDaysActive: state.totalDaysActive + 1,
-            todaysMicroLessonRead: false,
-          });
-          // Bonus: every 7 days, earn a freeze
-          if (newStreak > 0 && newStreak % 7 === 0) {
-            get().earnFreeze();
-          }
-          logEvent('streak_continued', { streak_length: newStreak });
-          return {
-            newStreak,
-            isNewRecord,
-            isFirstToday: true,
-            streakBroken: false,
-            daysSinceLastActive: daysSince,
-          };
-        }
-        
-        // Streak broken — use freeze if available
-        if (state.freezesAvailable > 0 && daysSince === 2) {
-          set({
-            freezesAvailable: state.freezesAvailable - 1,
-            lastActiveDate: today,
-            totalDaysActive: state.totalDaysActive + 1,
-            todaysMicroLessonRead: false,
-          });
-          return {
-            newStreak: state.currentStreak,
-            isNewRecord: false,
-            isFirstToday: true,
-            streakBroken: false,
-            daysSinceLastActive: daysSince,
-          };
-        }
-        
-        // Streak broken, no freeze available
-        set({
-          currentStreak: 1,
-          lastActiveDate: today,
-          totalDaysActive: state.totalDaysActive + 1,
-          todaysMicroLessonRead: false,
-        });
-        logEvent('streak_broken', { streak_length: state.currentStreak });
-        return {
-          newStreak: 1,
-          isNewRecord: false,
-          isFirstToday: true,
-          streakBroken: true,
-          daysSinceLastActive: daysSince,
-        };
-      },
-      
-      useFreezeToken: () => {
-        const state = get();
-        if (state.freezesAvailable > 0) {
-          set({ freezesAvailable: state.freezesAvailable - 1 });
-          return true;
-        }
-        return false;
-      },
-      
+      microLessonReadOn: null,
+
       markMicroLessonRead: (lessonId: string) => {
         const state = get();
-        if (state.microLessonsRead.includes(lessonId)) return;
         set({
-          microLessonsRead: [...state.microLessonsRead, lessonId],
-          todaysMicroLessonRead: true,
+          microLessonsRead: state.microLessonsRead.includes(lessonId) ? state.microLessonsRead : [...state.microLessonsRead, lessonId],
+          microLessonReadOn: localDay(),
         });
       },
-      
-      resetStreak: () => set({
-        currentStreak: 0,
-        lastActiveDate: null,
-      }),
-      
-      earnFreeze: () => {
+
+      markLegacyMigrated: (uid: string) => {
         const state = get();
-        // Max 3 freezes at a time
-        if (state.freezesAvailable < 3) {
-          set({ freezesAvailable: state.freezesAvailable + 1 });
-        }
+        if (!state.migratedTo.includes(uid)) set({ migratedTo: [...state.migratedTo, uid] });
       },
     }),
     {
@@ -371,14 +245,16 @@ To keep you watching, they need:
  * Returns today's micro-lesson based on day-of-year hash.
  * Same lesson shown to all users on the same day for community feel.
  */
+/**
+ * Not shown until their factual claims are checked (Buffett / Coca-Cola
+ * figures; crash statistics). Kept in the bank, out of the rotation.
+ */
+export const UNVERIFIED_MICRO_LESSONS = new Set(['ml_005', 'ml_006']);
+
 export function getTodaysMicroLesson(): MicroLesson {
   const today = new Date();
+  const rotation = microLessonBank.filter(l => !UNVERIFIED_MICRO_LESSONS.has(l.id));
   const dayOfYear = Math.floor((today.getTime() - new Date(today.getFullYear(), 0, 0).getTime()) / (1000 * 60 * 60 * 24));
-  const lessonIndex = dayOfYear % microLessonBank.length;
-  const lesson = microLessonBank[lessonIndex];
-  
-  return {
-    ...lesson,
-    date: today.toISOString().split('T')[0],
-  };
+  const lesson = rotation[dayOfYear % rotation.length];
+  return { ...lesson, date: localDay(today) };
 }

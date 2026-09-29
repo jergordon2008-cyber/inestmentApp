@@ -7,9 +7,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { changeColor, changeSign } from '../utils/change';
-import { useUserStore } from '../services/userStore';
+import { useUserStore, useCurrentStreak } from '../services/userStore';
 import { usePortfolioStore } from '../services/portfolioStore';
-import { useStreakStore } from '../services/streakStore';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import {
   useSyncStatusStore, selectHasUnsaved, selectHasFailed, selectIsRetrying, selectIsSaving, retryNow,
@@ -25,6 +24,8 @@ interface Props {
   onTutorChatPress?: () => void;
   onSignOut: () => void;
   onRestartOnboarding: () => void;
+  /** Shows the first-run tour again. */
+  onReplayTourPress?: () => void;
   onJournalPress?: () => void;
   onClassroomPress?: () => void;
   onCustomizePress?: () => void;
@@ -47,7 +48,7 @@ function FadeSlide({ children, delay = 0 }: { children: React.ReactNode; delay?:
 }
 
 export function ProfileScreen({
-  onSignOut, onRestartOnboarding, onJournalPress, onClassroomPress, onPrivacyPress, onTermsPress,
+  onSignOut, onRestartOnboarding, onReplayTourPress, onJournalPress, onClassroomPress, onPrivacyPress, onTermsPress,
   onBehavioralAssessmentPress, onPlaybooksPress, onMacroDashboardPress,
   onCommunityPress, onTutorChatPress, onCustomizePress,
   onAdminPress, isAdmin,
@@ -55,7 +56,7 @@ export function ProfileScreen({
   const { theme, toggleTheme, mode } = useTheme();
   const user      = useUserStore(s => s.user);
   const portfolio = usePortfolioStore(s => s.portfolio);
-  const streak    = useStreakStore(s => s.currentStreak);
+  const streak    = useCurrentStreak();
   const [showSignOutModal, setShowSignOutModal] = useState(false);
   // Signing out clears this account's portfolio and journal from the device,
   // so anything not yet in the cloud would be lost. The sheet warns first and
@@ -198,6 +199,9 @@ export function ProfileScreen({
         {/* ── Settings ── */}
         <FadeSlide delay={300}>
           <SectionGroup title="Settings" theme={theme}>
+            {onReplayTourPress && (
+              <SettingRow icon="map-outline" label="App Tour" meta="Replay" onPress={onReplayTourPress} theme={theme} />
+            )}
             <SettingRow icon="document-text-outline" label="Privacy Policy" meta="View" onPress={onPrivacyPress} theme={theme} />
             <SettingRow icon="receipt-outline" label="Terms of Service" meta="View" onPress={onTermsPress} theme={theme} />
             <SettingRow icon="information-circle-outline" label="App Version" meta="0.1.0 · MVP" theme={theme} />

@@ -11,6 +11,8 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, Tier, RiskTolerance } from '../types';
+import { applyActivity, streakFieldsOf, localDay, currentStreak, ActivityEvent } from './dailyStreak';
+import { logEvent } from './analyticsService';
 
 interface UserState {
   user: User | null;
@@ -22,8 +24,12 @@ interface UserState {
   updateUser: (updates: Partial<User>) => void;
   completeLesson: (lessonId: string) => void;
   earnBadge: (badgeId: string) => void;
-  incrementStreak: () => void;
-  resetStreak: () => void;
+  /**
+   * Records a qualifying action (finished lesson, finished Market Minute,
+   * graded prediction). Counts at most once per local day. Returns the
+   * streak before and after, for the screen that celebrates it.
+   */
+  recordActivity: () => { before: number; after: number; event: ActivityEvent } | null;
   unlockTier: (tier: Tier) => void;
   logout: () => void;
   setOnboarded: (value: boolean) => void;
@@ -69,31 +75,18 @@ export const useUserStore = create<UserState>()(
         };
       }),
 
-      incrementStreak: () => set((state) => {
-        if (!state.user) return state;
-        const today = new Date().toISOString().split('T')[0];
-        if (state.user.lastActiveDate === today) return state; // already counted today
-
-        return {
-          user: {
-            ...state.user,
-            streak: state.user.streak + 1,
-            lastActiveDate: today,
-            updatedAt: new Date().toISOString(),
-          },
-        };
-      }),
-
-      resetStreak: () => set((state) => {
-        if (!state.user) return state;
-        return {
-          user: {
-            ...state.user,
-            streak: 0,
-            updatedAt: new Date().toISOString(),
-          },
-        };
-      }),
+      recordActivity: () => {
+        const user = get().user;
+        if (!user) return null;
+        const before = streakFieldsOf(user);
+        const { next, event } = applyActivity(before, localDay());
+        if (next !== before) {
+          set({ user: { ...user, ...next, updatedAt: new Date().toISOString() } });
+        }
+        if (event === 'continued' || event === 'frozen') logEvent('streak_continued', { streak_length: next.streak });
+        if (event === 'broken') logEvent('streak_broken', { streak_length: before.streak });
+        return { before: before.streak, after: next.streak, event };
+      },
 
       unlockTier: (tier) => set((state) => {
         if (!state.user) return state;
@@ -145,6 +138,9 @@ export function createNewUser(params: {
     primaryGoal: params.primaryGoal,
     streak: 0,
     lastActiveDate: '',
+    longestStreak: 0,
+    freezesAvailable: 0,
+    totalDaysActive: 0,
     totalLessonsWatched: 0,
     totalTradesExecuted: 0,
     subscription: 'free',
@@ -153,4 +149,10 @@ export function createNewUser(params: {
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/** The streak as it stands today (0 if it lapsed), for display. */
+export function useCurrentStreak(): number {
+  const user = useUserStore(s => s.user);
+  return user ? currentStreak(streakFieldsOf(user), localDay()) : 0;
 }

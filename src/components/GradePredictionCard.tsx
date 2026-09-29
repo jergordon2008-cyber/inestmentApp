@@ -22,6 +22,7 @@ import {
   useTradeJournalStore, JournalEntry, GradeResult, MovedBecause, REASON_CONFIG, isFinalGrade,
 } from '../services/tradeJournalStore';
 import { usePortfolioStore } from '../services/portfolioStore';
+import { useUserStore } from '../services/userStore';
 import { fetchStock, isLiveQuote, LIVE_DATA_ENABLED } from '../services/marketDataFacade';
 import { gradeStatus, nextGradeDate, priceChangePercent } from '../services/predictionGrading';
 import { showAlert } from '../utils/alert';
@@ -50,6 +51,7 @@ export function GradePredictionCard({ entry, onStockPress }: { entry: JournalEnt
   const recordPriceCheck = useTradeJournalStore(s => s.recordPriceCheck);
   const answerMovedBecause = useTradeJournalStore(s => s.answerMovedBecause);
   const trades = usePortfolioStore(s => s.portfolio?.trades);
+  const recordActivity = useUserStore(s => s.recordActivity);
   const [choice, setChoice] = useState<GradeResult | null>(null);
 
   const status = gradeStatus(entry, new Date());
@@ -63,6 +65,9 @@ export function GradePredictionCard({ entry, onStockPress }: { entry: JournalEnt
       showAlert('Already graded', 'This prediction already has a grade, and grades can’t be changed.');
       return;
     }
+    // A final grade is one of the day's qualifying actions (dailyStreak);
+    // "too early to tell" isn't a grade, so it doesn't count.
+    if (isFinalGrade(choice)) recordActivity();
     if (choice === 'too_early') {
       const next = nextGradeDate({ ...entry, grade: { result: 'too_early', gradedAt: new Date().toISOString() } });
       showAlert('Saved', next ? `We’ll ask you again on ${fmtDate(next)}.` : 'We’ll ask you again later.');

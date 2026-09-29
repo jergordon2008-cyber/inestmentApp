@@ -29,8 +29,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { Button } from '../components/Button';
 import { Card } from '../components/Card';
-import { useStreakStore, getTodaysMicroLesson, MicroLesson } from '../services/streakStore';
-import { useUserStore } from '../services/userStore';
+import { useStreakStore, getTodaysMicroLesson, MicroLesson, selectMicroLessonReadToday } from '../services/streakStore';
+import { useUserStore, useCurrentStreak } from '../services/userStore';
 import { getRetrievalQuestions } from '../data/lessonInlineQuestions';
 import { QuizQuestion } from '../types';
 import { logEvent } from '../services/analyticsService';
@@ -45,10 +45,11 @@ const MIN_READ_SECONDS = 20; // Must spend at least 20s on the lesson
 
 export function MicroLessonScreen({ onBack, onStockPress, onComplete }: MicroLessonScreenProps) {
   const { theme } = useTheme();
-  const todaysMicroLessonRead = useStreakStore(state => state.todaysMicroLessonRead);
+  const todaysMicroLessonRead = useStreakStore(selectMicroLessonReadToday);
   const markRead = useStreakStore(state => state.markMicroLessonRead);
-  const recordActivity = useStreakStore(state => state.recordActivity);
-  const currentStreak = useStreakStore(state => state.currentStreak);
+  // A finished Market Minute is one of the day's qualifying actions (dailyStreak).
+  const recordActivity = useUserStore(state => state.recordActivity);
+  const currentStreak = useCurrentStreak();
   const completedLessons = useUserStore(s => s.user?.lessonsCompleted ?? []);
 
   const [lesson] = useState<MicroLesson>(() => getTodaysMicroLesson());
@@ -80,12 +81,11 @@ export function MicroLessonScreen({ onBack, onStockPress, onComplete }: MicroLes
   const handleComplete = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     
-    const before = currentStreak;
     markRead(lesson.id);
     const update = recordActivity();
     logEvent('micro_lesson_completed', { lesson_id: lesson.id });
 
-    setStreakUpdate({ before, after: update.newStreak });
+    setStreakUpdate({ before: update?.before ?? currentStreak, after: update?.after ?? currentStreak });
     setShowCelebration(true);
     
     Animated.spring(celebrateAnim, {

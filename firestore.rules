@@ -40,12 +40,94 @@ service cloud.firestore {
       allow write: if isOwner(uid);
     }
 
-    // Classrooms: any signed-in user can read/create/update for MVP
-    // simplicity (club-scale, trusted users). Tighten to teacher-only
-    // writes once roles are enforced server-side.
+    // ── Classrooms ──────────────────────────────────────────────────────
+    // A classroom doc carries its own roster (memberIds/members), its
+    // teacher list (teacherIds) and its join code. Every rule below is
+    // evaluated against those fields on the document itself.
+    //
+    //   read   — enrolled members only (uid in memberIds), plus admin. The
+    //            client's "my classrooms" query filters memberIds
+    //            array-contains uid, which satisfies this per document.
+    //   create — the creator must be the sole teacher AND sole member of
+    //            the new doc, and the code must match the code alphabet
+    //            (see /classroom_codes). Nobody can create a classroom on
+    //            someone else's behalf or seed it with other members.
+    //   update — three narrow shapes, each checked via affectedKeys() so
+    //            nothing outside the named fields can change:
+    //            (a) self-join: a signed-in NON-member appends exactly their
+    //                own uid to memberIds and exactly one member entry
+    //                carrying their uid with role 'student'.
+    //            (b) teacher edit: a uid in teacherIds changes content
+    //                fields only. code / teacherIds / memberIds / members
+    //                are not in that list, so they are immutable after
+    //                creation — no self-promotion, no roster edits.
+    //            (c) member completion: an enrolled member may change only
+    //                `assignments` (the Mark Complete button). Known
+    //                residual: a member could forge another member's
+    //                completion. Closing that means moving completions to
+    //                a subcollection (Option B, deferred).
+    //   delete — never from the client.
+    function isClassroomMember() {
+      return isSignedIn() && request.auth.uid in resource.data.memberIds;
+    }
+    function isClassroomTeacher() {
+      return isSignedIn() && request.auth.uid in resource.data.teacherIds;
+    }
+    function changesOnly(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+    function isValidClassCode(code) {
+      // 5 chars, no I / O / 0 / 1 (unambiguous when read aloud in class).
+      // Mirrors CODE_ALPHABET in src/services/classroomStore.ts.
+      return code is string && code.matches('^[A-HJ-NP-Z2-9]{5}$');
+    }
     match /classrooms/{classId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
+      allow read: if isClassroomMember() || isAdmin();
+
+      allow create: if isSignedIn()
+        && request.resource.data.teacherIds == [request.auth.uid]
+        && request.resource.data.memberIds == [request.auth.uid]
+        && isValidClassCode(request.resource.data.code);
+
+      // (a) self-join
+      allow update: if isSignedIn()
+        && !(request.auth.uid in resource.data.memberIds)
+        && changesOnly(['memberIds', 'members'])
+        && request.resource.data.memberIds == resource.data.memberIds.concat([request.auth.uid])
+        && request.resource.data.members.size() == resource.data.members.size() + 1
+        && request.resource.data.members[resource.data.members.size()].id == request.auth.uid
+        && request.resource.data.members[resource.data.members.size()].role == 'student';
+
+      // (b) teacher edit
+      allow update: if isClassroomTeacher()
+        && changesOnly(['name', 'description', 'subject', 'gradeLevel', 'assignments', 'announcements']);
+
+      // (c) member completion
+      allow update: if isClassroomMember() && changesOnly(['assignments']);
+
+      allow delete: if false;
+    }
+
+    // Join-code index: classroom_codes/{CODE} → { classId, teacherId }.
+    // Lets a non-member resolve a code to a classroom id WITHOUT being able
+    // to read or list any classroom document (the roster stays private).
+    // The code is the document id, so two classrooms can never share one:
+    // a second create with the same code is an update, which is denied.
+    // Only the classroom's own teacher can create the entry, and it must
+    // point at a classroom (written in the same batch — hence getAfter)
+    // whose code matches and whose teacherIds contains the caller.
+    // `get` only: a code must be known to be looked up. `list` is denied so
+    // nobody can enumerate every classroom's join code.
+    match /classroom_codes/{code} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create: if isSignedIn()
+        && isValidClassCode(code)
+        && request.resource.data.teacherId == request.auth.uid
+        && request.resource.data.classId is string
+        && getAfter(/databases/$(database)/documents/classrooms/$(request.resource.data.classId)).data.code == code
+        && request.auth.uid in getAfter(/databases/$(database)/documents/classrooms/$(request.resource.data.classId)).data.teacherIds;
+      allow update, delete: if false;
     }
 
     // Admin allow-list — presence of a doc here grants admin rights.

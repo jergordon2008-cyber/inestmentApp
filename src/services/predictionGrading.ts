@@ -18,6 +18,7 @@
 import {
   JournalEntry, TradeReason, Confidence, REASON_CONFIG, isPredictionTextValid, isFinalGrade,
 } from './tradeJournalStore';
+import { MOOD_CONFIG, Mood } from './moodStore';
 
 export const MIN_GRADED_FOR_RATE = 3;
 /** After "too early to tell", ask again this many days later (the shortest check-back option). */
@@ -78,6 +79,10 @@ export interface AccuracyReport {
   byReason: ({ reason: TradeReason } & AccuracyGroup)[];
   /** Only confidence levels with at least one graded prediction, 1 → 5. */
   byConfidence: ({ confidence: Confidence } & AccuracyGroup)[];
+  /** Only moods with at least one graded prediction, in MOOD_CONFIG order. */
+  byMood: ({ mood: Mood } & AccuracyGroup)[];
+  /** Graded predictions with no mood recorded (no mood check was taken). Never guessed. */
+  gradedWithoutMood: number;
   /** Gated predictions not yet graded (waiting, due, or answered "too early"). */
   ungraded: number;
   /** Entries from before the thesis gate, excluded from every number here. */
@@ -110,10 +115,16 @@ export function predictionAccuracy(entries: JournalEntry[]): AccuracyReport {
     .map(confidence => ({ confidence, ...group(graded.filter(e => e.confidence === confidence)) }))
     .filter(g => g.graded > 0);
 
+  const byMood = (Object.keys(MOOD_CONFIG) as Mood[])
+    .map(mood => ({ mood, ...group(graded.filter(e => e.mood === mood)) }))
+    .filter(g => g.graded > 0);
+
   return {
     overall: group(graded),
     byReason,
     byConfidence,
+    byMood,
+    gradedWithoutMood: graded.filter(e => !e.mood).length,
     ungraded: gradable.length - graded.length,
     excludedPreGate: entries.length - gradable.length,
   };

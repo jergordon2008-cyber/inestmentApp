@@ -7,16 +7,18 @@ export interface MoodEntry {
   mood: Mood;
   date: string;
   tradeSymbol?: string;
-  tradeOutcome?: number; // % gain/loss on that trade
 }
 
 interface MoodState {
   todayMood: Mood | null;
   history: MoodEntry[];
   setMood: (mood: Mood, symbol?: string) => void;
-  recordTradeOutcome: (symbol: string, pct: number) => void;
-  getMoodStats: () => Record<Mood, { count: number; avgReturn: number }>;
 }
+// Mood used to be scored by the P&L of the trade that followed it
+// (getMoodStats / recordTradeOutcome — never called, but one hookup away from
+// the leak Phase C removed). A mood is now recorded on the prediction it came
+// before, and scored like everything else: by the student's own grade (see
+// predictionGrading's byMood).
 
 export const MOOD_CONFIG: Record<Mood, { emoji: string; label: string; color: string; warning: string; safe: boolean }> = {
   calm:       { emoji: '😌', label: 'Calm',       color: '#10B981', warning: '', safe: true },
@@ -37,28 +39,5 @@ export const useMoodStore = create<MoodState>((set, get) => ({
     AsyncStorage.setItem('@investapp:mood_history', JSON.stringify(updated)).catch(() => {});
   },
 
-  recordTradeOutcome: (symbol, pct) => {
-    set(s => ({
-      history: s.history.map((h, i) =>
-        i === 0 && h.tradeSymbol === symbol ? { ...h, tradeOutcome: pct } : h
-      ),
-    }));
-  },
 
-  getMoodStats: () => {
-    const stats: Record<Mood, { count: number; avgReturn: number }> = {
-      calm: { count: 0, avgReturn: 0 }, excited: { count: 0, avgReturn: 0 },
-      anxious: { count: 0, avgReturn: 0 }, frustrated: { count: 0, avgReturn: 0 },
-      fomo: { count: 0, avgReturn: 0 },
-    };
-    get().history.filter(h => h.tradeOutcome !== undefined).forEach(h => {
-      stats[h.mood].count++;
-      stats[h.mood].avgReturn += h.tradeOutcome!;
-    });
-    Object.keys(stats).forEach(k => {
-      const m = k as Mood;
-      if (stats[m].count > 0) stats[m].avgReturn /= stats[m].count;
-    });
-    return stats;
-  },
 }));

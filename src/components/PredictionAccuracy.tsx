@@ -12,6 +12,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { JournalEntry, REASON_CONFIG } from '../services/tradeJournalStore';
+import { MOOD_CONFIG } from '../services/moodStore';
 import { predictionAccuracy, AccuracyGroup, MIN_GRADED_FOR_RATE } from '../services/predictionGrading';
 
 function RateCell({ g }: { g: AccuracyGroup }) {
@@ -78,6 +79,26 @@ export function PredictionAccuracy({ entries }: { entries: JournalEntry[] }) {
               <RateCell g={g} />
             </View>
           ))}
+
+          {r.byMood.length > 0 && (
+            <>
+              <Text style={[st.sub, { color: theme.colors.textTertiary }]}>BY HOW YOU FELT</Text>
+              {r.byMood.map(g => (
+                <View key={g.mood} style={rowStyle}>
+                  <Text style={[st.rowLabel, { color: theme.colors.textPrimary }]}>
+                    {MOOD_CONFIG[g.mood].emoji} {MOOD_CONFIG[g.mood].label}
+                  </Text>
+                  <Text style={[st.rowMeta, { color: theme.colors.textTertiary }]}>{counts(g)}</Text>
+                  <RateCell g={g} />
+                </View>
+              ))}
+              {r.gradedWithoutMood > 0 && (
+                <Text style={[st.fine, { color: theme.colors.textTertiary, marginTop: 6 }]}>
+                  {r.gradedWithoutMood} graded prediction{r.gradedWithoutMood === 1 ? " has" : "s have"} no mood recorded.
+                </Text>
+              )}
+            </>
+          )}
         </>
       )}
 

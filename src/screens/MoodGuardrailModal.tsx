@@ -7,7 +7,8 @@ import { useMoodStore, MOOD_CONFIG, Mood } from '../services/moodStore';
 interface Props {
   visible: boolean;
   symbol: string;
-  onProceed: () => void;
+  /** The mood the student picked, so it can be recorded on their prediction. */
+  onProceed: (mood: Mood) => void;
   onCancel: () => void;
 }
 
@@ -22,7 +23,7 @@ export function MoodGuardrailModal({ visible, symbol, onProceed, onCancel }: Pro
     setSelectedMood(mood);
     setMood(mood, symbol);
     if (MOOD_CONFIG[mood].safe) {
-      onProceed(); // calm = proceed immediately
+      onProceed(mood); // calm = proceed immediately
     } else {
       setStep('warning');
     }
@@ -79,7 +80,7 @@ export function MoodGuardrailModal({ visible, symbol, onProceed, onCancel }: Pro
                   <Ionicons name="pause" size={14} color={theme.colors.textSecondary} />
                   <Text style={[s.waitBtnText, { color: theme.colors.textSecondary }]}>Wait & Cool Down</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => { reset(); onProceed(); }}
+                <TouchableOpacity onPress={() => { const m = selectedMood; reset(); if (m) onProceed(m); }}
                   style={[s.proceedBtn, { backgroundColor: cfg.color }]}>
                   <Text style={s.proceedBtnText}>Proceed Anyway</Text>
                 </TouchableOpacity>

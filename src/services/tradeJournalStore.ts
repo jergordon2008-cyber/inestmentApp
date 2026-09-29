@@ -19,6 +19,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { readLegacyDecisionEntries, LegacyDecisionEntry } from './decisionJournalStore';
+import type { Mood } from './moodStore';
 
 // ============================================================================
 // REASON TAXONOMY
@@ -188,6 +189,9 @@ export interface JournalEntry {
     reflectionDate: string;
   };
   
+  /** From the mood check just before this prediction (premium). Absent if none was taken. */
+  mood?: Mood;
+
   /** Present once the student has answered the grade prompt. */
   grade?: PredictionGrade;
 

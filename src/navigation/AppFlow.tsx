@@ -22,6 +22,7 @@ import { useSkillTreeStore, SKILL_NODES } from '../services/skillTreeStore';
 import { logActivity } from '../services/firestoreSync';
 import { getChallengeForLesson } from '../data/lessonChallenges';
 import { MoodGuardrailModal } from '../screens/MoodGuardrailModal';
+import type { Mood } from '../services/moodStore';
 import { DecisionJournalModal } from '../screens/DecisionJournalScreen';
 import { AIExplainModal } from '../components/AIExplainModal';
 import { navigate, replace, goBack, goTab } from './navigationRef';
@@ -81,6 +82,9 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
   const createJournalEntry = useTradeJournalStore(s => s.createEntry);
 
   const [explainTerm, setExplainTerm] = useState<string | null>(null);
+  // The mood picked in the mood check, bound to the symbol it was picked for,
+  // so it can be recorded on that buy's prediction and graded with it.
+  const [pendingMood, setPendingMood] = useState<{ symbol: string; mood: Mood } | null>(null);
   const [moodModal, setMoodModal] = useState<{ visible: boolean; symbol: string; pendingTrade?: { symbol: string; action: TradeType } }>({ visible: false, symbol: '' });
   // The prediction form. It's buy-only now, so it carries a symbol rather than
   // a symbol and action. `stayOnTrade` is set when it's opened from the Trade
@@ -141,6 +145,7 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
   };
 
   const openTrade = (symbol: string, action: TradeType) => {
+    setPendingMood(null);
     if (canUseFeature('moodGuard')) {
       setMoodModal({ visible: true, symbol, pendingTrade: { symbol, action } });
     } else {
@@ -149,7 +154,7 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
   };
 
   const requestPrediction = (symbol: string) => setDjModal({ visible: true, symbol, stayOnTrade: true });
-  const clearPendingPrediction = () => setPendingPrediction(null);
+  const clearPendingPrediction = () => { setPendingPrediction(null); setPendingMood(null); };
 
   const handleLessonComplete = (lessonId: string, lessonTitle: string) => {
     const fromSkillTree = skillTreeLessonRef.current === lessonId;
@@ -187,6 +192,7 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
         checkBackAt: checkBackDate(pendingPrediction.checkBack),
         reasonCategory: pendingPrediction.reasonCategory,
         confidence: pendingPrediction.confidence,
+        mood: pendingMood?.symbol.toUpperCase() === trade.symbol.toUpperCase() ? pendingMood.mood : undefined,
       });
     }
     if (trade && uid && user) {
@@ -199,6 +205,7 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
       }).catch(e => console.error('[activity] failed to log trade activity', e)); // fire-and-forget
     }
     setPendingPrediction(null);
+    setPendingMood(null);
     // Land on the portfolio so the student sees the position they just opened.
     goTab('Portfolio');
   };
@@ -233,9 +240,10 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
       <MoodGuardrailModal
         visible={moodModal.visible}
         symbol={moodModal.symbol}
-        onProceed={() => {
+        onProceed={(mood) => {
           const t = moodModal.pendingTrade;
           setMoodModal({ visible: false, symbol: '' });
+          if (t) setPendingMood({ symbol: t.symbol, mood });
           if (t) continueToTrade(t.symbol, t.action);
         }}
         onCancel={() => setMoodModal({ visible: false, symbol: '' })}
@@ -252,6 +260,7 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
         onCancel={() => {
           // Cancel abandons the buy. No navigation, and nothing left pending.
           setPendingPrediction(null);
+          setPendingMood(null);
           setDjModal({ visible: false, symbol: '' });
         }}
       />

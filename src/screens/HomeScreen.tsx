@@ -19,6 +19,8 @@ import { getStockSync } from '../services/marketDataFacade';
 import { fs, sp, isTablet } from '../constants/responsive';
 import { changeCaret, changeColor, changeSign } from '../utils/change';
 import { SyncBanner } from '../components/SyncBanner';
+import { useTradeJournalStore } from '../services/tradeJournalStore';
+import { duePredictions } from '../services/predictionGrading';
 
 const ALL_LESSONS = [...tier1Lessons, ...tier2Lessons, ...tier3Lessons];
 
@@ -71,6 +73,9 @@ export function HomeScreen({
   const user        = useUserStore(s => s.user);
   const portfolio   = usePortfolioStore(s => s.portfolio);
   const streak      = useStreakStore(s => s.currentStreak);
+  const journal     = useTradeJournalStore(s => s.entries);
+  // Predictions past their check-back date and not yet graded.
+  const dueCount    = useMemo(() => duePredictions(journal, new Date()).length, [journal]);
 
   const nextLesson = useMemo(() =>
     ALL_LESSONS.find(l => !user?.lessonsCompleted.includes(l.id)), [user]);
@@ -123,6 +128,27 @@ export function HomeScreen({
             </View>
           </View>
         </SlideUp>
+
+        {/* ── Predictions ready to grade ── */}
+        {dueCount > 0 && (
+          <SlideUp delay={40}>
+            <AnimatedPressable
+              onPress={onJournalPress}
+              style={[s.gradePrompt, { backgroundColor: theme.colors.gold + '14', borderColor: theme.colors.gold + '40' }]}
+            >
+              <Ionicons name="checkmark-done-outline" size={20} color={theme.colors.gold} />
+              <View style={{ flex: 1 }}>
+                <Text style={[s.gradePromptTitle, { color: theme.colors.textPrimary }]}>
+                  {dueCount === 1 ? '1 prediction is ready to grade' : `${dueCount} predictions are ready to grade`}
+                </Text>
+                <Text style={[s.gradePromptBody, { color: theme.colors.textSecondary }]}>
+                  {dueCount === 1 ? 'Its check-back date has arrived.' : 'Their check-back dates have arrived.'} Did what you predicted happen?
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.colors.textTertiary} />
+            </AnimatedPressable>
+          </SlideUp>
+        )}
 
         {/* ── Portfolio Hero Card ── */}
         <SlideUp delay={80}>
@@ -407,6 +433,9 @@ function StatCard({ label, val, icon, color, theme }: { label: string; val: stri
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
+  gradePrompt: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 14 },
+  gradePromptTitle: { fontSize: 14, fontWeight: '700' },
+  gradePromptBody: { fontSize: 12, lineHeight: 17, marginTop: 2 },
   container: { flex: 1 },
   scroll:    { paddingBottom: 24 },
 

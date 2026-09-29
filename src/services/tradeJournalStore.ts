@@ -120,6 +120,32 @@ export function looksLikePriceCall(claim: string): boolean {
   return NUMBER.test(claim) && !BUSINESS.test(claim);
 }
 
+// ============================================================================
+// GRADES (Phase C)
+// ============================================================================
+// A prediction is graded against its own words — "did what you said would
+// happen, happen?" — at its check-back date. The price change is revealed
+// only after a final grade is saved, and is recorded beside the grade, never
+// inside it.
+
+/** 'too_early' is an answer, not a grade: it never counts, and asks again later. */
+export type GradeResult = 'yes' | 'partly' | 'no' | 'too_early';
+export type FinalGrade = Exclude<GradeResult, 'too_early'>;
+export type MovedBecause = 'yes' | 'partly' | 'no' | 'not_sure';
+
+export function isFinalGrade(r: GradeResult | undefined): r is FinalGrade {
+  return r === 'yes' || r === 'partly' || r === 'no';
+}
+
+export interface PredictionGrade {
+  result: GradeResult;
+  gradedAt: string;
+  /** Captured after a final grade was saved, from a live quote. Not part of the grade. */
+  priceCheck?: { entryPrice: number; price: number; checkedAt: string };
+  /** Optional follow-up, asked after the price is revealed. */
+  movedBecause?: MovedBecause;
+}
+
 export interface JournalEntry {
   id: string;
   tradeId: string;
@@ -162,6 +188,9 @@ export interface JournalEntry {
     reflectionDate: string;
   };
   
+  /** Present once the student has answered the grade prompt. */
+  grade?: PredictionGrade;
+
   createdAt: string;
   updatedAt: string;
 }
@@ -187,14 +216,17 @@ interface TradeJournalState {
   ) => void;
   getEntryByTradeId: (tradeId: string) => JournalEntry | undefined;
   getEntriesBySymbol: (symbol: string) => JournalEntry[];
-  
-  // Stats
-  getReflectedTradeStats: () => {
-    totalReflected: number;
-    thesisCorrectRate: number;
-    avgReturn: number;
-    bestLearning: string | null;
-  };
+
+  /**
+   * Saves the student's answer. A final grade (yes/partly/no) is locked: it
+   * can't be replaced, because the price is revealed right after it and a
+   * changeable grade could then be re-graded by P&L. Returns false if refused.
+   */
+  gradePrediction: (id: string, result: GradeResult) => boolean;
+  /** Only after a final grade, and only once. */
+  recordPriceCheck: (id: string, check: NonNullable<PredictionGrade['priceCheck']>) => void;
+  /** Only after a final grade. */
+  answerMovedBecause: (id: string, answer: MovedBecause) => void;
 }
 
 // ============================================================================
@@ -329,41 +361,35 @@ export const useTradeJournalStore = create<TradeJournalState>()(
         return get().entries.filter((e) => e.symbol === symbol);
       },
       
-      getReflectedTradeStats: () => {
-        const entries = get().entries.filter((e) => e.postTradeReflection);
-        const total = entries.length;
-        
-        if (total === 0) {
-          return {
-            totalReflected: 0,
-            thesisCorrectRate: 0,
-            avgReturn: 0,
-            bestLearning: null,
-          };
-        }
-        
-        const correctTheses = entries.filter(
-          (e) => e.postTradeReflection!.thesisPlayedOut === 'yes'
-        ).length;
-        
-        const avgReturn = entries.reduce(
-          (sum, e) => sum + e.postTradeReflection!.actualReturn,
-          0
-        ) / total;
-        
-        // Find the most "valuable" learning (longest reflection)
-        const bestEntry = entries.reduce<JournalEntry | null>((best, current) => {
-          const len = current.postTradeReflection!.keyLearnings.length;
-          if (!best || len > best.postTradeReflection!.keyLearnings.length) return current;
-          return best;
-        }, null);
-        
-        return {
-          totalReflected: total,
-          thesisCorrectRate: (correctTheses / total) * 100,
-          avgReturn,
-          bestLearning: bestEntry?.postTradeReflection?.keyLearnings || null,
-        };
+      gradePrediction: (id, result) => {
+        const entry = get().entries.find(e => e.id === id);
+        if (!entry || isFinalGrade(entry.grade?.result)) return false;
+        const now = new Date().toISOString();
+        set(state => ({
+          entries: state.entries.map(e =>
+            e.id === id ? { ...e, grade: { result, gradedAt: now }, updatedAt: now } : e),
+        }));
+        return true;
+      },
+
+      recordPriceCheck: (id, check) => {
+        const now = new Date().toISOString();
+        set(state => ({
+          entries: state.entries.map(e =>
+            e.id === id && e.grade && isFinalGrade(e.grade.result) && !e.grade.priceCheck
+              ? { ...e, grade: { ...e.grade, priceCheck: check }, updatedAt: now }
+              : e),
+        }));
+      },
+
+      answerMovedBecause: (id, answer) => {
+        const now = new Date().toISOString();
+        set(state => ({
+          entries: state.entries.map(e =>
+            e.id === id && e.grade && isFinalGrade(e.grade.result)
+              ? { ...e, grade: { ...e.grade, movedBecause: answer }, updatedAt: now }
+              : e),
+        }));
       },
     }),
     {

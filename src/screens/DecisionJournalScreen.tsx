@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, TextInput, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
+import { PredictionAccuracy } from '../components/PredictionAccuracy';
 import {
   useTradeJournalStore, REASON_CONFIG, TradeReason, Confidence, Prediction, CheckBackPeriod,
   CHECK_BACK_OPTIONS, PREDICTION_MIN_CLAIM, PREDICTION_MIN_FALSIFIER, looksLikePriceCall,
@@ -11,21 +12,13 @@ interface Props { onBack: () => void; }
 
 export function DecisionJournalScreen({ onBack }: Props) {
   const { theme } = useTheme();
-  // Reads the merged trade journal now — this screen used to have its own
-  // store. Its "WHICH REASONS WIN FOR YOU" insight is gone with it: it was
-  // driven by an `outcome` field nothing ever wrote, so it was empty for
-  // every student who ever opened this screen, and it graded reasoning by
-  // P&L, which the thesis gate deliberately doesn't do. Real prediction-
-  // accuracy insights (graded against what a student predicted, not against
-  // price) land here once the review flow that produces them exists.
+  // Reads the merged trade journal. The Insights tab once ranked reasons by
+  // win rate — P&L, which the thesis gate deliberately doesn't grade. It now
+  // shows prediction accuracy by the student's own grades, broken down by
+  // reason and by confidence (PredictionAccuracy, shared with Trade Journal).
   const entries = useTradeJournalStore(s => s.entries);
   const [tab, setTab] = useState<'insights' | 'log'>('log');
   const s = styles(theme);
-
-  const categoryCounts = (Object.keys(REASON_CONFIG) as TradeReason[])
-    .map(r => ({ reason: r, count: entries.filter(e => e.reasonCategory === r).length }))
-    .filter(c => c.count > 0)
-    .sort((a, b) => b.count - a.count);
 
   return (
     <SafeAreaView style={s.container}>
@@ -51,37 +44,9 @@ export function DecisionJournalScreen({ onBack }: Props) {
 
       <ScrollView contentContainerStyle={s.pad} showsVerticalScrollIndicator={false}>
         {tab === 'insights' ? (
-          <>
-            {categoryCounts.length === 0 ? (
-              <View style={s.empty}>
-                <Ionicons name="journal-outline" size={40} color={theme.colors.textTertiary} style={{ marginBottom: 10 }} />
-                <Text style={s.emptyTitle}>No trades journaled yet</Text>
-                <Text style={s.emptySub}>Write a prediction before your next trade and it'll show up here.</Text>
-              </View>
-            ) : (
-              <>
-                <Text style={s.sectionTitle}>HOW YOU'VE BEEN DECIDING</Text>
-                {categoryCounts.map(({ reason, count }) => {
-                  const cfg = REASON_CONFIG[reason];
-                  return (
-                    <View key={reason} style={[s.statCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Ionicons name={cfg.icon as any} size={18} color={cfg.color} />
-                        <Text style={[s.statLabel, { color: theme.colors.textPrimary }]}>{cfg.label}</Text>
-                        <View style={{ flex: 1 }} />
-                        <Text style={[s.statMeta, { color: theme.colors.textTertiary }]}>
-                          {count} trade{count === 1 ? '' : 's'}
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })}
-                <Text style={[s.emptySub, { marginTop: 4 }]}>
-                  Whether each reason actually paid off will show here once you've reviewed a few trades in the Trade Journal.
-                </Text>
-              </>
-            )}
-          </>
+          <View style={[s.statCard, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
+            <PredictionAccuracy entries={entries} />
+          </View>
         ) : (
           <>
             {entries.length === 0 ? (

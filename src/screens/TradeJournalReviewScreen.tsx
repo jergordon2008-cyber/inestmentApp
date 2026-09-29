@@ -1,22 +1,19 @@
 /**
- * Trade Journal Review Screen
+ * Trade Journal — where predictions get graded.
  *
- * The screen that turns trades into learning. For each closed trade, users review:
- * - What they thought would happen (their thesis)
- * - What actually happened (price action)
- * - Why the difference (their reflection)
+ * Each prediction written through the thesis gate comes due at its check-back
+ * date and is graded against the student's own words: did what they said
+ * would happen, happen? The price change is revealed only after that grade is
+ * saved (see GradePredictionCard), and accuracy is by grade, never by P&L.
  *
- * This is the single most powerful feature in the app for actually making
- * users better investors. Most retail investors NEVER do this. Doing it
- * just 10 times beats reading any number of books.
- *
- * Aggregate stats at the top show patterns:
- * - "You're right about your thesis 60% of the time"
- * - "Your average hold is 23 days but you said 60"
- * - "Most successful trades came from earnings beat signals"
+ * This screen used to show "Avg return" beside "Thesis correct" as if they
+ * measured the same thing, and its reflection form recorded the P&L at the
+ * moment of reflecting. Both are gone. Entries from before the thesis gate
+ * (a category label instead of a claim, no way to be wrong) are still listed,
+ * read-only, and excluded from accuracy.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -24,22 +21,21 @@ import {
   SafeAreaView,
   ScrollView,
   TouchableOpacity,
-  TextInput,
 } from 'react-native';
-import { showAlert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { changeColor, changeSign } from '../utils/change';
 import { Card } from '../components/Card';
-import { Button } from '../components/Button';
+import { GradePredictionCard } from '../components/GradePredictionCard';
+import { PredictionAccuracy } from '../components/PredictionAccuracy';
 import { useTradeJournalStore, JournalEntry } from '../services/tradeJournalStore';
-import { usePortfolioStore } from '../services/portfolioStore';
-import { getStockSync } from '../services/marketDataFacade';
+import { gradeStatus } from '../services/predictionGrading';
 
 interface TradeJournalReviewScreenProps {
   onBack: () => void;
   onStockPress?: (symbol: string) => void;
 }
+
+const newestFirst = (a: JournalEntry, b: JournalEntry) => Date.parse(b.createdAt) - Date.parse(a.createdAt);
 
 export function TradeJournalReviewScreen({
   onBack,
@@ -47,14 +43,17 @@ export function TradeJournalReviewScreen({
 }: TradeJournalReviewScreenProps) {
   const { theme } = useTheme();
   const entries = useTradeJournalStore(state => state.entries);
-  const getStats = useTradeJournalStore(state => state.getReflectedTradeStats);
-  const portfolio = usePortfolioStore(state => state.portfolio);
 
-  const stats = useMemo(() => getStats(), [getStats, entries]);
-
-  // Group entries
-  const unreflectedEntries = entries.filter(e => !e.postTradeReflection);
-  const reflectedEntries = entries.filter(e => e.postTradeReflection);
+  // Predictions that were due when the screen opened stay in "Ready to grade"
+  // after they're graded, so the price reveal and follow-up question appear
+  // in place instead of the card jumping to another section.
+  const [openedDue] = useState(() => new Set(entries.filter(e => gradeStatus(e, new Date()) === 'due').map(e => e.id)));
+  const now = new Date();
+  const ready   = entries.filter(e => gradeStatus(e, now) === 'due' || openedDue.has(e.id)).sort(newestFirst);
+  const waiting = entries.filter(e => gradeStatus(e, now) === 'waiting' && !openedDue.has(e.id)).sort(newestFirst);
+  const graded  = entries.filter(e => gradeStatus(e, now) === 'graded' && !openedDue.has(e.id)).sort(newestFirst);
+  const preGate = entries.filter(e => gradeStatus(e, now) === 'pre-gate').sort(newestFirst);
+  const dueCount = entries.filter(e => gradeStatus(e, now) === 'due').length;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -78,109 +77,61 @@ export function TradeJournalReviewScreen({
               Your journal is empty
             </Text>
             <Text style={[styles.emptyDesc, { color: theme.colors.textSecondary }]}>
-              Every time you make a paper trade and write your thesis, an entry is added here. Reviewing them is how you actually get better at investing.
+              Every buy starts with a written prediction, and each one lands here. When its check-back date arrives, you grade it against what you said.
             </Text>
           </View>
         )}
 
-        {/* Stats card */}
-        {stats.totalReflected > 0 && (
+        {entries.length > 0 && (
           <Card variant="elevated" padding="md" style={styles.statsCard}>
-            <Text style={[styles.statsLabel, { color: theme.colors.textTertiary }]}>
-              YOUR PATTERNS
-            </Text>
-            <View style={styles.statsGrid}>
-              <View style={styles.statBox}>
-                <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>
-                  {stats.totalReflected}
-                </Text>
-                <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
-                  Trades reviewed
-                </Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={[styles.statValue, { color: theme.colors.success }]}>
-                  {/* getStats() already returns this as a percentage
-                      ((correctTheses / total) * 100), so it is rendered as-is.
-                      Multiplying by 100 again here showed 3-of-5 as "6000%". */}
-                  {stats.thesisCorrectRate.toFixed(0)}%
-                </Text>
-                <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
-                  Thesis correct
-                </Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={[
-                  styles.statValue,
-                  { color: changeColor(stats.avgReturn, theme) }
-                ]}>
-                  {changeSign(stats.avgReturn)}{stats.avgReturn.toFixed(1)}%
-                </Text>
-                <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
-                  Avg return
-                </Text>
-              </View>
-            </View>
-
-            {stats.bestLearning && (
-              <View style={[styles.learningBox, { backgroundColor: theme.colors.primaryGlow }]}>
-                <Text style={[styles.learningLabel, { color: theme.colors.primary }]}>
-                  BIGGEST LESSON SO FAR
-                </Text>
-                <Text style={[styles.learningText, { color: theme.colors.textPrimary }]}>
-                  "{stats.bestLearning}"
-                </Text>
-              </View>
-            )}
+            <PredictionAccuracy entries={entries} />
           </Card>
         )}
 
-        {/* Needs reflection section */}
-        {unreflectedEntries.length > 0 && (
+        {ready.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>
-                Awaiting reflection
-              </Text>
-              <View style={[styles.badge, { backgroundColor: theme.colors.warningGlow }]}>
-                <Text style={[styles.badgeText, { color: theme.colors.warning }]}>
-                  {unreflectedEntries.length}
-                </Text>
-              </View>
+              <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Ready to grade</Text>
+              {dueCount > 0 && (
+                <View style={[styles.badge, { backgroundColor: theme.colors.warningGlow }]}>
+                  <Text style={[styles.badgeText, { color: theme.colors.warning }]}>{dueCount}</Text>
+                </View>
+              )}
             </View>
             <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>
-              Open positions where you can check in on your thesis
+              These have reached their check-back date. Did what you predicted happen?
             </Text>
-
-            {unreflectedEntries.slice().reverse().map(entry => (
-              <UnreflectedEntryCard
-                key={entry.id}
-                entry={entry}
-                trades={portfolio?.trades ?? []}
-                onPress={() => onStockPress?.(entry.symbol)}
-                theme={theme}
-              />
-            ))}
+            {ready.map(e => <GradePredictionCard key={e.id} entry={e} onStockPress={onStockPress} />)}
           </View>
         )}
 
-        {/* Reflected entries section */}
-        {reflectedEntries.length > 0 && (
+        {waiting.length > 0 && (
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>
-              Past reflections
-            </Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Waiting for check-back</Text>
             <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>
-              Trades you've already reviewed — your learning record
+              You'll grade each one on the date you chose when you wrote it.
             </Text>
+            {waiting.map(e => <GradePredictionCard key={e.id} entry={e} onStockPress={onStockPress} />)}
+          </View>
+        )}
 
-            {reflectedEntries.slice().reverse().map(entry => (
-              <ReflectedEntryCard
-                key={entry.id}
-                entry={entry}
-                onPress={() => onStockPress?.(entry.symbol)}
-                theme={theme}
-              />
+        {graded.length > 0 && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Graded</Text>
+            {graded.map(e => <GradePredictionCard key={e.id} entry={e} onStockPress={onStockPress} />)}
+          </View>
+        )}
+
+        {preGate.length > 0 && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Before predictions</Text>
+            <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>
+              Written before every buy needed a prediction. Kept for reference; not graded or counted.
+            </Text>
+            {preGate.map(entry => entry.postTradeReflection ? (
+              <ReflectedEntryCard key={entry.id} entry={entry} onPress={() => onStockPress?.(entry.symbol)} theme={theme} />
+            ) : (
+              <PreGateEntryCard key={entry.id} entry={entry} onPress={() => onStockPress?.(entry.symbol)} theme={theme} />
             ))}
           </View>
         )}
@@ -194,196 +145,29 @@ export function TradeJournalReviewScreen({
 // SUB-COMPONENTS
 // ============================================================================
 
-function UnreflectedEntryCard({
-  entry,
-  trades,
-  onPress,
-  theme
-}: {
-  entry: JournalEntry;
-  trades: any[];
-  onPress: () => void;
-  theme: any;
-}) {
-  const [showReflection, setShowReflection] = useState(false);
-  const [reflection, setReflection] = useState('');
-  const [thesisPlayedOut, setThesisPlayedOut] = useState<'yes' | 'partially' | 'no' | null>(null);
-  const [wouldRepeat, setWouldRepeat] = useState<'yes' | 'no' | 'with_changes' | null>(null);
-
-  const addPostTradeReflection = useTradeJournalStore(state => state.addPostTradeReflection);
-
-  const daysSince = Math.floor(
-    (Date.now() - new Date(entry.createdAt).getTime()) / (1000 * 60 * 60 * 24)
-  );
-
-  const handleSubmit = () => {
-    if (!thesisPlayedOut || !wouldRepeat || reflection.length < 10) {
-      showAlert('Almost there', 'Please answer all questions and write at least 10 characters of reflection.');
-      return;
-    }
-
-    const trade = trades.find(t => t.id === entry.tradeId);
-    const currentStock = getStockSync(entry.symbol);
-    const actualReturn = currentStock && trade
-      ? ((currentStock.price - trade.pricePerShare) / trade.pricePerShare) * 100
-      : 0;
-
-    addPostTradeReflection(entry.id, {
-      actualReturn,
-      actualHoldDays: daysSince,
-      thesisPlayedOut,
-      keyLearnings: reflection,
-      wouldRepeat,
-      reflectionDate: new Date().toISOString(),
-    });
-
-    showAlert('Saved', 'Reflection added to your journal. Keep building that pattern recognition.');
-    setShowReflection(false);
-  };
-
+/** Read-only view of an entry from before the thesis gate. */
+function PreGateEntryCard({ entry, onPress, theme }: { entry: JournalEntry; onPress: () => void; theme: any }) {
   return (
-    <Card variant="default" padding="md" style={styles.entryCard}>
-      <View style={styles.entryHeader}>
-        <View style={styles.entrySymbolBlock}>
-          <Text style={[styles.entrySymbol, { color: theme.colors.textPrimary }]}>
-            {entry.symbol}
-          </Text>
-          <Text style={[styles.entryDate, { color: theme.colors.textTertiary }]}>
-            {daysSince} day{daysSince === 1 ? '' : 's'} ago
-          </Text>
-        </View>
-        <TouchableOpacity onPress={onPress} style={styles.viewButton}>
-          <Text style={[styles.viewButtonText, { color: theme.colors.primary }]}>
-            View stock ›
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={[styles.thesisBox, { backgroundColor: theme.colors.surfaceMuted }]}>
-        <Text style={[styles.thesisLabel, { color: theme.colors.textTertiary }]}>
-          YOUR THESIS
+    <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+      <Card variant="default" padding="md" style={styles.entryCard}>
+        <Text style={[styles.entrySymbol, { color: theme.colors.textPrimary }]}>{entry.symbol}</Text>
+        <Text style={[styles.entryDate, { color: theme.colors.textTertiary }]}>
+          {new Date(entry.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
         </Text>
-        <Text style={[styles.thesisText, { color: theme.colors.textPrimary }]}>
-          "{entry.buyReason}"
-        </Text>
-        {entry.exitPlan && (
+        {!!entry.buyReason && (
           <>
-            <Text style={[styles.thesisLabel, { color: theme.colors.textTertiary, marginTop: 8 }]}>
-              EXIT PLAN
-            </Text>
-            <Text style={[styles.thesisText, { color: theme.colors.textPrimary }]}>
-              "{entry.exitPlan}"
-            </Text>
+            <Text style={[styles.thesisLabel, { color: theme.colors.textTertiary, marginTop: 8 }]}>REASON</Text>
+            <Text style={[styles.thesisText, { color: theme.colors.textSecondary }]}>"{entry.buyReason}"</Text>
           </>
         )}
-      </View>
-
-      {!showReflection ? (
-        <Button
-          label="Add reflection"
-          onPress={() => setShowReflection(true)}
-          variant="secondary"
-          size="md"
-          fullWidth
-          style={{ marginTop: 12 }}
-        />
-      ) : (
-        <View style={styles.reflectionForm}>
-          <Text style={[styles.reflectionLabel, { color: theme.colors.textPrimary }]}>
-            Has your thesis played out?
-          </Text>
-          <View style={styles.optionRow}>
-            {(['yes', 'partially', 'no'] as const).map(opt => (
-              <TouchableOpacity
-                key={opt}
-                onPress={() => setThesisPlayedOut(opt)}
-                style={[
-                  styles.optionChip,
-                  {
-                    backgroundColor: thesisPlayedOut === opt ? theme.colors.primary : theme.colors.surface,
-                    borderColor: thesisPlayedOut === opt ? theme.colors.primary : theme.colors.border,
-                  },
-                ]}
-              >
-                <Text style={[
-                  styles.optionChipText,
-                  { color: thesisPlayedOut === opt ? '#FFFFFF' : theme.colors.textSecondary },
-                ]}>
-                  {opt.charAt(0).toUpperCase() + opt.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <Text style={[styles.reflectionLabel, { color: theme.colors.textPrimary, marginTop: 16 }]}>
-            What did you learn?
-          </Text>
-          <TextInput
-            value={reflection}
-            onChangeText={setReflection}
-            placeholder="The key lesson from this trade so far..."
-            placeholderTextColor={theme.colors.textTertiary}
-            multiline
-            numberOfLines={3}
-            style={[
-              styles.textarea,
-              {
-                borderColor: theme.colors.border,
-                backgroundColor: theme.colors.surface,
-                color: theme.colors.textPrimary,
-              },
-            ]}
-          />
-
-          <Text style={[styles.reflectionLabel, { color: theme.colors.textPrimary, marginTop: 16 }]}>
-            Would you make this trade again?
-          </Text>
-          <View style={styles.optionRow}>
-            {([
-              { v: 'yes', l: 'Yes' },
-              { v: 'with_changes', l: 'With tweaks' },
-              { v: 'no', l: 'No' },
-            ] as const).map(opt => (
-              <TouchableOpacity
-                key={opt.v}
-                onPress={() => setWouldRepeat(opt.v)}
-                style={[
-                  styles.optionChip,
-                  {
-                    backgroundColor: wouldRepeat === opt.v ? theme.colors.primary : theme.colors.surface,
-                    borderColor: wouldRepeat === opt.v ? theme.colors.primary : theme.colors.border,
-                  },
-                ]}
-              >
-                <Text style={[
-                  styles.optionChipText,
-                  { color: wouldRepeat === opt.v ? '#FFFFFF' : theme.colors.textSecondary },
-                ]}>
-                  {opt.l}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          <View style={styles.formActions}>
-            <Button
-              label="Cancel"
-              onPress={() => setShowReflection(false)}
-              variant="ghost"
-              size="md"
-            />
-            <Button
-              label="Save reflection"
-              onPress={handleSubmit}
-              variant="primary"
-              size="md"
-              disabled={!thesisPlayedOut || !wouldRepeat || reflection.length < 10}
-              style={{ flex: 1 }}
-            />
-          </View>
-        </View>
-      )}
-    </Card>
+        {!!entry.exitPlan && (
+          <>
+            <Text style={[styles.thesisLabel, { color: theme.colors.textTertiary, marginTop: 8 }]}>EXIT PLAN</Text>
+            <Text style={[styles.thesisText, { color: theme.colors.textSecondary }]}>"{entry.exitPlan}"</Text>
+          </>
+        )}
+      </Card>
+    </TouchableOpacity>
   );
 }
 

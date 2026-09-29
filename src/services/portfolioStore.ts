@@ -379,6 +379,17 @@ export const usePortfolioStore = create<PortfolioState>()(
     {
       name: 'investapp-portfolio-storage',
       storage: createJSONStorage(() => AsyncStorage),
+      // The copy restored from device storage at launch is recomputed too.
+      // setPortfolio already recomputes, but restoring from storage bypassed
+      // it, so a stale stored totalValue (e.g. $83,362.50 against $100,000
+      // cash and no positions) showed until reconciliation ran — and for the
+      // whole session if the launch's cloud load failed and it never did.
+      merge: (persisted, current) => {
+        const saved = (persisted ?? {}) as Partial<PortfolioState>;
+        const p = saved.portfolio;
+        const usable = p && Array.isArray(p.positions) && typeof p.currentCash === 'number';
+        return { ...current, ...saved, portfolio: usable ? withRecomputedTotals(p) : (p ?? null) };
+      },
     }
   )
 );

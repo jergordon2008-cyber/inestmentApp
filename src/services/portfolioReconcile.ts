@@ -34,6 +34,19 @@
  *                               tell whether it held that student's unsynced
  *                               trades.
  *
+ * WHO OWNS A COPY
+ * Early portfolios were created before the app used Firebase uids, so their
+ * userId is a local id like user_1786829049867_1pg2j1n — on the device copy
+ * and on the cloud doc alike. Comparing that to the uid called the student's
+ * own device copy "another user's": it was set aside, and the save gate then
+ * refused every later trade. isSameOwner also accepts a legacy-format id
+ * that matches the one on this account's own cloud doc (portfolios/{uid} is
+ * owner-write-only, so a match proves ownership). Only the legacy format is
+ * matched that way, so another account's real uid is never accepted. The
+ * chosen copy's userId is then normalised to the uid, the legacy id kept in
+ * formerUserIds so the student's other devices still match, and the result
+ * marked for pushing so the cloud doc is corrected.
+ *
  * `reconcilePortfolio` is pure: no I/O, no clock, inputs never mutated. The
  * backup writer below is the only thing in this file that touches storage.
  */
@@ -69,6 +82,32 @@ function tradeKey(t: Trade): string {
   return t.id || `${t.symbol}|${t.type}|${t.createdAt}|${t.shares}|${t.pricePerShare}`;
 }
 
+/** Local ids from before Firebase uids, e.g. user_1786829049867_1pg2j1n. */
+export const LEGACY_LOCAL_USER_ID = /^user_\d{10,}_[a-z0-9]+$/;
+
+/**
+ * Whether a copy carrying `copyUserId` belongs to `uid`. `cloud` is this
+ * account's own cloud doc (portfolios/{uid}), which only the owner can write.
+ */
+export function isSameOwner(
+  copyUserId: string | undefined,
+  uid: string,
+  cloud: Pick<Portfolio, 'userId' | 'formerUserIds'> | null,
+): boolean {
+  if (!copyUserId) return false;
+  if (copyUserId === uid) return true;
+  if (!cloud || !LEGACY_LOCAL_USER_ID.test(copyUserId)) return false;
+  return copyUserId === cloud.userId || (cloud.formerUserIds ?? []).includes(copyUserId);
+}
+
+/** The copy labelled as the uid's, recording any legacy id it replaces. Same object if already correct. */
+function ownedBy(p: Portfolio, uid: string): Portfolio {
+  if (p.userId === uid) return p;
+  const former = new Set(p.formerUserIds ?? []);
+  if (LEGACY_LOCAL_USER_ID.test(p.userId)) former.add(p.userId);
+  return { ...p, userId: uid, formerUserIds: [...former] };
+}
+
 function newestTradeTime(p: Portfolio): number {
   let newest = -Infinity;
   for (const t of p.trades) {
@@ -83,12 +122,25 @@ export function reconcilePortfolio(
   cloud: Portfolio | null,
   uid: string,
 ): ReconcileResult {
+  const r = decide(device, cloud, uid);
+  if (!r.portfolio) return r;
+  // Whatever was chosen is this account's portfolio now; label it so. A
+  // relabel is a change the cloud doesn't have yet, so it gets pushed.
+  const labelled = ownedBy(r.portfolio, uid);
+  return labelled === r.portfolio ? r : { ...r, portfolio: labelled, pushToCloud: true };
+}
+
+function decide(
+  device: Portfolio | null,
+  cloud: Portfolio | null,
+  uid: string,
+): ReconcileResult {
   const backups: ReconcileResult['backups'] = [];
 
   // A device copy that belongs to someone else never decides anything — but
   // it is kept.
   let mine = device;
-  if (device && device.userId !== uid) {
+  if (device && !isSameOwner(device.userId, uid, cloud)) {
     backups.push({ reason: `device copy belonged to user ${device.userId}, not ${uid}`, portfolio: device });
     mine = null;
   }

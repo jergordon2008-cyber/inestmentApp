@@ -20,7 +20,7 @@ import { initAnalyticsLifecycle, startNewSession, logScreenView, flushScreenBuff
 import { useTradeJournalStore, JournalEntry } from './src/services/tradeJournalStore';
 import { initializeLivePrices } from './src/services/stockDataService';
 import { TourGuide } from './src/components/TourGuide';
-import { reconcilePortfolio, savePortfolioBackups, ReconcileResult } from './src/services/portfolioReconcile';
+import { reconcilePortfolio, savePortfolioBackups, ReconcileResult, isSameOwner } from './src/services/portfolioReconcile';
 import { reconcileJournal, saveJournalBackups, JournalReconcileResult } from './src/services/journalReconcile';
 import { requestSave, resetSync, setSyncAccount, loadUnsavedFlags, useSyncStatusStore, selectHasUnsaved } from './src/services/syncStatus';
 import { predictionActivity } from './src/services/predictionGrading';
@@ -188,10 +188,18 @@ function AppContent() {
    * — the two are always written and cleared together — and adoptPortfolio
    * replaces that portfolio.
    */
-  const resolveJournal = async (forUid: string, cloud: JournalEntry[] | null): Promise<JournalReconcileResult> => {
+  const resolveJournal = async (
+    forUid: string,
+    cloud: JournalEntry[] | null,
+    cloudPortfolio: Portfolio | null,
+  ): Promise<JournalReconcileResult> => {
     await Promise.all([waitForHydration(useTradeJournalStore.persist), waitForHydration(usePortfolioStore.persist), loadUnsavedFlags()]);
     const { entries, ownerUid } = useTradeJournalStore.getState();
-    const owner = ownerUid ?? usePortfolioStore.getState().portfolio?.userId ?? null;
+    // A legacy local portfolio id (see isSameOwner) that matches this
+    // account's cloud doc means the journal is this account's too.
+    const portfolioOwner = usePortfolioStore.getState().portfolio?.userId ?? null;
+    const owner = ownerUid
+      ?? (portfolioOwner && isSameOwner(portfolioOwner, forUid, cloudPortfolio) ? forUid : portfolioOwner);
     const result = reconcileJournal({ ownerUid: owner, entries }, cloud, forUid);
     if (result.backups.length > 0) {
       await saveJournalBackups(result.backups);
@@ -292,7 +300,7 @@ function AppContent() {
           // sees the settled portfolio. This replaced "cloud wins", which
           // erased every trade the cloud had missed.
           const decision = await resolvePortfolio(fbUser.uid, remotePortfolio);
-          const journalDecision = await resolveJournal(fbUser.uid, entries);
+          const journalDecision = await resolveJournal(fbUser.uid, entries, remotePortfolio);
           adoptPortfolio(fbUser.uid, decision);
           setUser(profile);
           setOnboarded(true);
@@ -301,7 +309,7 @@ function AppContent() {
           // Signed up but never finished onboarding: there's no portfolio to
           // reconcile yet, and onboarding is about to create one.
           const decision = await resolvePortfolio(fbUser.uid, null);
-          const journalDecision = await resolveJournal(fbUser.uid, entries);
+          const journalDecision = await resolveJournal(fbUser.uid, entries, null);
           adoptPortfolio(fbUser.uid, decision);
           adoptJournal(fbUser.uid, journalDecision);
         }
@@ -485,7 +493,7 @@ function AppContent() {
       ]);
       if (profile) {
         const decision = await resolvePortfolio(loggedInUid, remotePortfolio);
-        const journalDecision = await resolveJournal(loggedInUid, entries);
+        const journalDecision = await resolveJournal(loggedInUid, entries, remotePortfolio);
         adoptPortfolio(loggedInUid, decision);
         setUser(profile);
         setOnboarded(true);
@@ -497,7 +505,7 @@ function AppContent() {
       } else {
         // Account exists in Auth but never finished onboarding.
         const decision = await resolvePortfolio(loggedInUid, null);
-        const journalDecision = await resolveJournal(loggedInUid, entries);
+        const journalDecision = await resolveJournal(loggedInUid, entries, null);
         adoptPortfolio(loggedInUid, decision);
         adoptJournal(loggedInUid, journalDecision);
         navigate('Onboarding');
@@ -515,7 +523,7 @@ function AppContent() {
       // A new account has no cloud portfolio. Reconciling against nothing
       // still matters: if this device was left holding another student's
       // copy, it's backed up here instead of overwritten by onboarding.
-      Promise.all([resolvePortfolio(newUid, null), resolveJournal(newUid, null)])
+      Promise.all([resolvePortfolio(newUid, null), resolveJournal(newUid, null, null)])
         .then(([decision, journalDecision]) => {
           adoptPortfolio(newUid, decision);
           adoptJournal(newUid, journalDecision);

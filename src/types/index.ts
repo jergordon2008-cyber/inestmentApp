@@ -192,6 +192,13 @@ export type ChartTimeRange = '1D' | '1W' | '1M' | '3M' | '1Y' | '5Y' | 'ALL';
 export interface Portfolio {
   id: string;
   userId: string;
+  /**
+   * Local ids this portfolio carried before the app used Firebase uids
+   * (e.g. user_1786829049867_1pg2j1n). Recorded when reconciliation replaces
+   * one with the uid, so another device still holding the old id is
+   * recognised as the same owner (see isSameOwner).
+   */
+  formerUserIds?: string[];
   name: string;                      // 'Main Portfolio'
   type: 'paper' | 'live';            // Always 'paper' for MVP
   

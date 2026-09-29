@@ -140,3 +140,24 @@ export function fromLegacyStreakStore(s: { currentStreak?: number; longestStreak
   if (!s || !s.lastActiveDate) return null;
   return streakFieldsOf({ streak: s.currentStreak, longestStreak: s.longestStreak, lastActiveDate: s.lastActiveDate, freezesAvailable: s.freezesAvailable, totalDaysActive: s.totalDaysActive });
 }
+
+export interface LegacyStreakState {
+  currentStreak?: number; longestStreak?: number; lastActiveDate?: string | null;
+  freezesAvailable?: number; totalDaysActive?: number;
+  migratedTo?: string[]; legacyRetired?: boolean;
+}
+
+/**
+ * The retired device streak, if it may be migrated into `uid` — else null.
+ * It has no owner of its own, so it's attributed through the device
+ * portfolio: `deviceBelongsToAccount` must be decided from the portfolio's
+ * owner as it was when the app LAUNCHED, before any sign-in adopted
+ * anything. (Checking the live store let a sign-in that had just adopted
+ * account B's portfolio claim account A's leftover streak for B.) Never
+ * after sign-out (retired), never twice for the same account.
+ */
+export function legacyStreakCandidate(legacy: LegacyStreakState | null | undefined, uid: string, deviceBelongsToAccount: boolean): StreakFields | null {
+  if (!legacy || legacy.legacyRetired || !deviceBelongsToAccount) return null;
+  if ((legacy.migratedTo ?? []).includes(uid)) return null;
+  return fromLegacyStreakStore(legacy);
+}

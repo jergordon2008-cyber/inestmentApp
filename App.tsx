@@ -24,7 +24,7 @@ import { reconcilePortfolio, savePortfolioBackups, ReconcileResult, isSameOwner 
 import { reconcileJournal, saveJournalBackups, JournalReconcileResult } from './src/services/journalReconcile';
 import { requestSave, resetSync, setSyncAccount, loadUnsavedFlags, useSyncStatusStore, selectHasUnsaved } from './src/services/syncStatus';
 import { predictionActivity } from './src/services/predictionGrading';
-import { streakFieldsOf, currentStreak, localDay, reconcileStreak, fromLegacyStreakStore, StreakFields } from './src/services/dailyStreak';
+import { streakFieldsOf, currentStreak, localDay, reconcileStreak, legacyStreakCandidate, StreakFields } from './src/services/dailyStreak';
 import { useStreakStore } from './src/services/streakStore';
 import type { User } from './src/types';
 import type { Portfolio } from './src/types';
@@ -43,6 +43,19 @@ function waitForHydration(p: { hasHydrated: () => boolean; onFinishHydration: (f
     if (p.hasHydrated()) { unsub(); resolve(); }
   });
 }
+
+/**
+ * Whose portfolio this device held when the app LAUNCHED — recorded the
+ * moment the store finishes restoring from storage, before any sign-in code
+ * can adopt a portfolio. Ownerless device data from before owners were
+ * recorded (the legacy streak; a journal with no ownerUid) is attributed
+ * through this, never through the live store: a sign-in that has already
+ * adopted account B's portfolio must not make account A's leftovers look
+ * like B's. Registered at import, so it runs before any other hydration
+ * waiter.
+ */
+const launchDevicePortfolioOwner: Promise<string | null> = waitForHydration(usePortfolioStore.persist)
+  .then(() => usePortfolioStore.getState().portfolio?.userId ?? null);
 
 // Cloud writes, handed to syncStatus.requestSave. Each reads the store when
 // it runs rather than taking a value, because syncStatus calls it again for
@@ -192,10 +205,9 @@ function AppContent() {
 
   /**
    * Merges the device journal (once loaded) with the cloud one and keeps any
-   * version that isn't used. Must run BEFORE adoptPortfolio: a journal saved
-   * before owners were recorded is attributed to the device portfolio's owner
-   * — the two are always written and cleared together — and adoptPortfolio
-   * replaces that portfolio.
+   * version that isn't used. A journal saved before owners were recorded is
+   * attributed to the device portfolio's owner AT LAUNCH (the two are always
+   * written and cleared together) — see launchDevicePortfolioOwner.
    */
   const resolveJournal = async (
     forUid: string,
@@ -206,7 +218,7 @@ function AppContent() {
     const { entries, ownerUid } = useTradeJournalStore.getState();
     // A legacy local portfolio id (see isSameOwner) that matches this
     // account's cloud doc means the journal is this account's too.
-    const portfolioOwner = usePortfolioStore.getState().portfolio?.userId ?? null;
+    const portfolioOwner = await launchDevicePortfolioOwner;
     const owner = ownerUid
       ?? (portfolioOwner && isSameOwner(portfolioOwner, forUid, cloudPortfolio) ? forUid : portfolioOwner);
     const result = reconcileJournal({ ownerUid: owner, entries }, cloud, forUid);
@@ -222,10 +234,10 @@ function AppContent() {
    * reconcileStreak). Profiles load cloud-wins, which would erase a streak
    * day recorded here but not yet saved. Candidates, each only if it's this
    * account's: the local user (same id), and — once per account — the
-   * retired device-only streak, if this device's portfolio belongs to the
-   * account (the rule the journal uses). Must run BEFORE adoptPortfolio,
-   * which replaces the device portfolio it reads. The result is saved by
-   * the ordinary guarded profile save when setUser runs.
+   * retired device-only streak, if this device's portfolio belonged to the
+   * account at launch (legacyStreakCandidate / launchDevicePortfolioOwner)
+   * and it hasn't been retired by a sign-out. The result is saved by the
+   * ordinary guarded profile save when setUser runs.
    */
   const resolveStreak = async (forUid: string, profile: User, cloudPortfolio: Portfolio | null): Promise<User> => {
     await Promise.all([waitForHydration(useUserStore.persist), waitForHydration(useStreakStore.persist), waitForHydration(usePortfolioStore.persist)]);
@@ -233,10 +245,11 @@ function AppContent() {
     const local = useUserStore.getState().user;
     if (local && local.id === forUid) candidates.push(streakFieldsOf(local));
     const legacy = useStreakStore.getState();
-    const devicePortfolio = usePortfolioStore.getState().portfolio;
-    if (!legacy.migratedTo.includes(forUid) && devicePortfolio && isSameOwner(devicePortfolio.userId, forUid, cloudPortfolio)) {
-      const fields = fromLegacyStreakStore(legacy);
-      if (fields) candidates.push(fields);
+    const launchOwner = await launchDevicePortfolioOwner;
+    const ownsDevice = !!launchOwner && isSameOwner(launchOwner, forUid, cloudPortfolio);
+    const legacyFields = legacyStreakCandidate(legacy, forUid, ownsDevice);
+    if (legacyFields) {
+      candidates.push(legacyFields);
       legacy.markLegacyMigrated(forUid);
     }
     const { fields, changed } = reconcileStreak(streakFieldsOf(profile), candidates);
@@ -297,6 +310,54 @@ function AppContent() {
     return unsubscribe;
   }, [uid]);
 
+  /**
+   * Loads and reconciles an account — once per sign-in. Firebase's auth
+   * listener fires on every sign-in, not only at launch, so an explicit
+   * login or signup used to run this whole load twice, concurrently: the
+   * handler's copy and the listener's, each reconciling and adopting. One
+   * could adopt a portfolio before the other checked ownership. Now every
+   * caller for the same uid shares the first call's promise; the handlers
+   * keep only their own extras (name prompt, onboarding, sign-up name).
+   * Cleared on sign-out. Resolves with the loaded profile (null: signed up
+   * but never onboarded); rejects if the cloud couldn't be read.
+   */
+  const accountLoad = useRef<{ uid: string; promise: Promise<User | null> } | null>(null);
+  const loadAccount = (forUid: string): Promise<User | null> => {
+    if (accountLoad.current?.uid === forUid) return accountLoad.current.promise;
+    const promise = (async () => {
+      const [profile, remotePortfolio, entries] = await Promise.all([
+        loadUserProfile(forUid),
+        loadPortfolio(forUid),
+        loadJournal(forUid),
+      ]);
+      if (profile) {
+        // Reconcile BEFORE the other updates, so the render that follows
+        // sees the settled portfolio. This replaced "cloud wins", which
+        // erased every trade the cloud had missed.
+        const decision = await resolvePortfolio(forUid, remotePortfolio);
+        const journalDecision = await resolveJournal(forUid, entries, remotePortfolio);
+        const withStreak = await resolveStreak(forUid, profile, remotePortfolio);
+        adoptPortfolio(forUid, decision);
+        setUser(withStreak);
+        setOnboarded(true);
+        adoptJournal(forUid, journalDecision);
+      } else {
+        // Signed up but never finished onboarding: there's no cloud portfolio
+        // yet. Reconciling against nothing still matters — a device left
+        // holding another student's copy gets it backed up, not overwritten.
+        const decision = await resolvePortfolio(forUid, null);
+        const journalDecision = await resolveJournal(forUid, entries, null);
+        adoptPortfolio(forUid, decision);
+        adoptJournal(forUid, journalDecision);
+      }
+      return profile;
+    })();
+    accountLoad.current = { uid: forUid, promise };
+    // A failed load may be retried by the next sign-in; a successful one isn't repeated.
+    promise.catch(() => { if (accountLoad.current?.promise === promise) accountLoad.current = null; });
+    return promise;
+  };
+
   // Restore an existing session on load (e.g. page refresh) by hydrating
   // this student's profile, portfolio, and journal from Firestore.
   useEffect(() => {
@@ -313,6 +374,8 @@ function AppContent() {
         if (useUserStore.getState().user || useUserStore.getState().isAuthenticated) {
           console.warn('[auth] signed out elsewhere or session ended; clearing the local user');
           resetSync();
+          accountLoad.current = null;
+          useStreakStore.getState().retireLegacyStreak();
           setUid(null);
           setAuthEmail('');
           setPortfolioReadyFor(null);
@@ -325,30 +388,7 @@ function AppContent() {
       setUid(fbUser.uid);
       setAuthEmail(fbUser.email ?? '');
       try {
-        const [profile, remotePortfolio, entries] = await Promise.all([
-          loadUserProfile(fbUser.uid),
-          loadPortfolio(fbUser.uid),
-          loadJournal(fbUser.uid),
-        ]);
-        if (profile) {
-          // Reconcile BEFORE the other updates, so the render that follows
-          // sees the settled portfolio. This replaced "cloud wins", which
-          // erased every trade the cloud had missed.
-          const decision = await resolvePortfolio(fbUser.uid, remotePortfolio);
-          const journalDecision = await resolveJournal(fbUser.uid, entries, remotePortfolio);
-          const withStreak = await resolveStreak(fbUser.uid, profile, remotePortfolio);
-          adoptPortfolio(fbUser.uid, decision);
-          setUser(withStreak);
-          setOnboarded(true);
-          adoptJournal(fbUser.uid, journalDecision);
-        } else {
-          // Signed up but never finished onboarding: there's no portfolio to
-          // reconcile yet, and onboarding is about to create one.
-          const decision = await resolvePortfolio(fbUser.uid, null);
-          const journalDecision = await resolveJournal(fbUser.uid, entries, null);
-          adoptPortfolio(fbUser.uid, decision);
-          adoptJournal(fbUser.uid, journalDecision);
-        }
+        await loadAccount(fbUser.uid);
       } catch (e) {
         // Deliberately NOT marked ready. If the cloud copy couldn't be read,
         // pushing the device copy could overwrite something newer. It stays
@@ -495,6 +535,9 @@ function AppContent() {
     flushScreenBuffer();
     signOutUser().catch(e => console.error('[auth] sign-out failed', e));
     resetSync({ clearFlagsFor: uid ?? undefined });
+    accountLoad.current = null;
+    // The legacy device streak belongs to nobody once no one is signed in.
+    useStreakStore.getState().retireLegacyStreak();
     setUid(null);
     setAuthEmail('');
     setPortfolioReadyFor(null);
@@ -507,6 +550,9 @@ function AppContent() {
   const handleRestartOnboarding = () => {
     signOutUser().catch(e => console.error('[auth] sign-out failed', e));
     resetSync({ clearFlagsFor: uid ?? undefined });
+    accountLoad.current = null;
+    // The legacy device streak belongs to nobody once no one is signed in.
+    useStreakStore.getState().retireLegacyStreak();
     setUid(null);
     setAuthEmail('');
     setPortfolioReadyFor(null);
@@ -518,33 +564,20 @@ function AppContent() {
 
   // Hydrate an existing account after login. Mirrors the session-restore
   // effect above, but runs on an explicit sign-in rather than on relaunch.
+  // Explicit login. The load itself is shared with the auth listener (see
+  // loadAccount); this adds only what's specific to a login.
   const handleLoginAuthed = async (loggedInUid: string, email: string) => {
     setUid(loggedInUid);
     setAuthEmail(email);
     try {
-      const [profile, remotePortfolio, entries] = await Promise.all([
-        loadUserProfile(loggedInUid),
-        loadPortfolio(loggedInUid),
-        loadJournal(loggedInUid),
-      ]);
+      const profile = await loadAccount(loggedInUid);
       if (profile) {
-        const decision = await resolvePortfolio(loggedInUid, remotePortfolio);
-        const journalDecision = await resolveJournal(loggedInUid, entries, remotePortfolio);
-        const withStreak = await resolveStreak(loggedInUid, profile, remotePortfolio);
-        adoptPortfolio(loggedInUid, decision);
-        setUser(withStreak);
-        setOnboarded(true);
-        adoptJournal(loggedInUid, journalDecision);
         // Legacy accounts (created before the name field existed, or whose
         // name was auto-derived from their email) get a one-time prompt
         // instead of staying unreadable on the leaderboard forever.
         if (!profile.hasCustomDisplayName) setNeedsNamePrompt(true);
       } else {
         // Account exists in Auth but never finished onboarding.
-        const decision = await resolvePortfolio(loggedInUid, null);
-        const journalDecision = await resolveJournal(loggedInUid, entries, null);
-        adoptPortfolio(loggedInUid, decision);
-        adoptJournal(loggedInUid, journalDecision);
         navigate('Onboarding');
       }
     } catch (e) {
@@ -557,15 +590,10 @@ function AppContent() {
       setUid(newUid);
       setAuthEmail(email);
       setAuthName(name ?? '');
-      // A new account has no cloud portfolio. Reconciling against nothing
-      // still matters: if this device was left holding another student's
-      // copy, it's backed up here instead of overwritten by onboarding.
-      Promise.all([resolvePortfolio(newUid, null), resolveJournal(newUid, null, null)])
-        .then(([decision, journalDecision]) => {
-          adoptPortfolio(newUid, decision);
-          adoptJournal(newUid, journalDecision);
-        })
-        .catch(e => console.error('[signup] could not back up this device\'s existing portfolio/journal', e));
+      // Shared with the auth listener, which fires for the new account too
+      // (see loadAccount). A new account has no profile, so this reconciles
+      // against nothing — backing up a copy another student left here.
+      loadAccount(newUid).catch(e => console.error('[signup] could not load the new account', e));
     },
     onLoginAuthed: handleLoginAuthed,
     onOnboardingComplete: handleOnboardingComplete,

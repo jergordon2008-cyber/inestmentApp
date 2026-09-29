@@ -35,6 +35,12 @@ interface StreakState {
   totalDaysActive: number;
   /** uids this device's legacy streak has already been migrated into. */
   migratedTo: string[];
+  /**
+   * Set on sign-out. The legacy streak has no owner of its own; once nobody
+   * is signed in it can't be attributed to anyone, so it's never migrated
+   * after that. Kept (not wiped) — only ignored.
+   */
+  legacyRetired: boolean;
 
   // Market Minute
   microLessonsRead: string[];          // IDs of completed micro-lessons
@@ -43,6 +49,7 @@ interface StreakState {
 
   markMicroLessonRead: (lessonId: string) => void;
   markLegacyMigrated: (uid: string) => void;
+  retireLegacyStreak: () => void;
 }
 
 /** Whether today's Market Minute is already done on this device. */
@@ -57,6 +64,7 @@ export const useStreakStore = create<StreakState>()(
       freezesAvailable: 0,
       totalDaysActive: 0,
       migratedTo: [],
+      legacyRetired: false,
       microLessonsRead: [],
       microLessonReadOn: null,
 
@@ -66,6 +74,10 @@ export const useStreakStore = create<StreakState>()(
           microLessonsRead: state.microLessonsRead.includes(lessonId) ? state.microLessonsRead : [...state.microLessonsRead, lessonId],
           microLessonReadOn: localDay(),
         });
+      },
+
+      retireLegacyStreak: () => {
+        if (!get().legacyRetired) set({ legacyRetired: true });
       },
 
       markLegacyMigrated: (uid: string) => {

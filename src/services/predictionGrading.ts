@@ -135,3 +135,49 @@ export function priceChangePercent(check: { entryPrice: number; price: number })
   if (!(check.entryPrice > 0) || !Number.isFinite(check.price)) return null;
   return ((check.price - check.entryPrice) / check.entryPrice) * 100;
 }
+
+// ============================================================================
+// CLASSROOM ACTIVITY (published to public_stats, shown on the class board)
+// ============================================================================
+// Counts that only rise by doing the work. Accuracy is deliberately NOT here:
+// it's self-graded, a teacher can't check it without reading the journal,
+// and ranking on it would reward generous grading. It stays in the student's
+// own Trade Journal / Decision Journal views.
+
+/** A review is on time if the prediction was first answered within this many days of its check-back date. */
+export const ON_TIME_DAYS = 7;
+
+export interface PredictionActivity {
+  /** Thesis-gate predictions written (pre-gate entries excluded). */
+  predictionsWritten: number;
+  /** Final grades (yes / partly / no). "Too early" is not a review. */
+  predictionsReviewed: number;
+  /** Reviews whose first answer came no later than ON_TIME_DAYS after the check-back date. */
+  reviewedOnTime: number;
+  /** Earliest check-back date among written predictions — when reviews can start. Null if none written. */
+  earliestCheckBackAt: string | null;
+}
+
+export function predictionActivity(entries: JournalEntry[]): PredictionActivity {
+  const gradable = entries.filter(isGradablePrediction);
+  let reviewed = 0, onTime = 0, earliest = Infinity;
+  for (const e of gradable) {
+    const due = Date.parse(e.checkBackAt!);
+    if (due < earliest) earliest = due;
+    if (!isFinalGrade(e.grade?.result)) continue;
+    reviewed++;
+    const first = Date.parse(e.grade!.firstAnsweredAt ?? e.grade!.gradedAt);
+    if (Number.isFinite(first) && first <= due + ON_TIME_DAYS * DAY_MS) onTime++;
+  }
+  return {
+    predictionsWritten: gradable.length,
+    predictionsReviewed: reviewed,
+    reviewedOnTime: onTime,
+    earliestCheckBackAt: Number.isFinite(earliest) ? new Date(earliest).toISOString() : null,
+  };
+}
+
+/** Once any student's earliest check-back date has passed, reviews exist to count. Before that, it's week one. */
+export function classReviewsOpen(earliestCheckBackDates: (string | null | undefined)[], now: Date): boolean {
+  return earliestCheckBackDates.some(d => !!d && Date.parse(d) <= now.getTime());
+}

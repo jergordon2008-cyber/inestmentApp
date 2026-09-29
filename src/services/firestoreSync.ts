@@ -118,6 +118,13 @@ export interface PublicStats {
   lessonsCompletedCount: number;
   streak: number;
   currentTier: number;
+  // Classroom board (Phase D): counts from the student's own journal, via
+  // predictionActivity. Optional — absent until the student's app publishes
+  // them. Accuracy is never published.
+  predictionsWritten?: number;
+  predictionsReviewed?: number;
+  reviewedOnTime?: number;
+  earliestCheckBackAt?: string | null;
   updatedAt: string;
 }
 

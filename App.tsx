@@ -23,6 +23,7 @@ import { TourGuide } from './src/components/TourGuide';
 import { reconcilePortfolio, savePortfolioBackups, ReconcileResult } from './src/services/portfolioReconcile';
 import { reconcileJournal, saveJournalBackups, JournalReconcileResult } from './src/services/journalReconcile';
 import { requestSave, resetSync, setSyncAccount, loadUnsavedFlags, useSyncStatusStore, selectHasUnsaved } from './src/services/syncStatus';
+import { predictionActivity } from './src/services/predictionGrading';
 import type { Portfolio } from './src/types';
 
 /**
@@ -59,7 +60,12 @@ function writePublicStats(forUid: string): Promise<void> {
   const user = useUserStore.getState().user;
   const portfolio = usePortfolioStore.getState().portfolio;
   if (!user || (portfolio && portfolio.userId !== forUid)) return Promise.resolve();
+  // Prediction counts for the classroom board, only from this account's own
+  // journal. Never accuracy — that stays private to the student.
+  const journal = useTradeJournalStore.getState();
+  const activity = journal.ownerUid === forUid ? predictionActivity(journal.entries) : {};
   return savePublicStats(forUid, {
+    ...activity,
     displayName: user.displayName,
     totalValue: portfolio?.totalValue ?? 100000,
     totalReturnPercent: portfolio?.totalReturnPercent ?? 0,
@@ -333,6 +339,8 @@ function AppContent() {
     if (lastSyncedJournal.current === journalEntries) return;
     lastSyncedJournal.current = journalEntries;
     requestSave('journal', uid, () => writeJournal(uid));
+    // A new prediction or grade changes the classroom board's counts.
+    requestSave('publicStats', uid, () => writePublicStats(uid));
   }, [uid, journalEntries, journalReadyFor, journalOwner]);
 
   // Boot live price refresh from Finnhub (no-op if no API key set)

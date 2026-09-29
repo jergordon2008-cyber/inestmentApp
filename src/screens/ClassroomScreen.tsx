@@ -9,6 +9,7 @@ import { useTheme } from '../context/ThemeContext';
 import { changeColor, changeSign } from '../utils/change';
 import { useClassroomStore, Classroom, Assignment, ClassMember } from '../services/classroomStore';
 import { useUserStore } from '../services/userStore';
+import { classReviewsOpen, ON_TIME_DAYS } from '../services/predictionGrading';
 
 interface Props {
   onBack: () => void;
@@ -141,6 +142,14 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
   }
 
   const students = classroom.members.filter(m => m.role === 'student');
+  // Week one: no prediction can have reached its check-back date, so nobody
+  // can have a review yet. Switches on the data, not the calendar.
+  const reviewsOpen = classReviewsOpen(students.map(m => m.earliestCheckBackAt), new Date());
+  const predictionLine = (m: ClassMember): string => {
+    if (m.predictionsWritten == null) return 'Predictions not synced yet';
+    const base = `${m.predictionsWritten} written · ${m.predictionsReviewed ?? 0} reviewed`;
+    return reviewsOpen ? `${base} · ${m.reviewedOnTime ?? 0} on time` : base;
+  };
   const activeAssignments = classroom.assignments.filter(a => a.status === 'active');
 
   return (
@@ -196,10 +205,18 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
               <Text style={[s.emptyText, { color: theme.colors.textSecondary }]}>No students have joined yet. Share the class code above.</Text>
             ) : (
               <>
-                <Text style={[s.emptyText, { color: theme.colors.textTertiary, marginBottom: 12 }]}>
+                <Text style={[s.boardNote, { color: theme.colors.textTertiary, marginBottom: 4 }]}>
                   Ranked by lessons completed — see who's leading.
                 </Text>
-                {/* TODO(Phase 4): switch ranking to thesis-correct rate once that metric exists */}
+                {/* Never ranked by prediction accuracy: it's self-graded, and a teacher
+                    can't check it without reading student journals. The board shows
+                    work that only goes up by doing it — predictions written, reviewed,
+                    and reviewed on time. Accuracy stays private to each student. */}
+                <Text style={[s.boardNote, { color: theme.colors.textTertiary, marginBottom: 14 }]}>
+                  {reviewsOpen
+                    ? `Reviewed means graded against what the student predicted. On time means answered within ${ON_TIME_DAYS} days of the prediction's check-back date. Accuracy stays private to each student.`
+                    : "Reviews open at each prediction's check-back date, so everyone starts at 0 reviewed."}
+                </Text>
                 {[...students]
                   .sort((a: ClassMember, b: ClassMember) => (b.lessonsCompleted ?? 0) - (a.lessonsCompleted ?? 0))
                   .map((m: ClassMember, i: number) => (
@@ -229,6 +246,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                             ? `$${m.portfolioValue.toLocaleString()} · ${m.lessonsCompleted ?? 0} lessons`
                             : `Not synced yet · ${m.lessonsCompleted ?? 0} lessons`}
                         </Text>
+                        <Text style={[s.studentMeta, { color: theme.colors.textTertiary }]}>{predictionLine(m)}</Text>
                       </View>
                       {m.portfolioReturn != null ? (
                         <Text style={[s.studentMeta, { color: changeColor(m.portfolioReturn, theme), fontWeight: '700' }]}>
@@ -376,6 +394,7 @@ const styles = (theme: any) => StyleSheet.create({
   description: { fontSize: 13, lineHeight: 19 },
 
   emptyText: { fontSize: 13, textAlign: 'center', paddingVertical: 40 },
+  boardNote: { fontSize: 12, lineHeight: 17, textAlign: 'center', paddingHorizontal: 8 },
 
   studentRow: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 14, borderWidth: 1, padding: 12, marginBottom: 8 },
   avatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },

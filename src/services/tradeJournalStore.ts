@@ -145,6 +145,12 @@ export interface PredictionGrade {
   priceCheck?: { entryPrice: number; price: number; checkedAt: string };
   /** Optional follow-up, asked after the price is revealed. */
   movedBecause?: MovedBecause;
+  /**
+   * When the prompt was first answered. Differs from gradedAt only when a
+   * "too early" answer came first; kept so an on-time first answer still
+   * counts as reviewed on time once the final grade lands (classroom board).
+   */
+  firstAnsweredAt?: string;
 }
 
 export interface JournalEntry {
@@ -371,7 +377,11 @@ export const useTradeJournalStore = create<TradeJournalState>()(
         const now = new Date().toISOString();
         set(state => ({
           entries: state.entries.map(e =>
-            e.id === id ? { ...e, grade: { result, gradedAt: now }, updatedAt: now } : e),
+            e.id === id ? {
+              ...e,
+              grade: { result, gradedAt: now, firstAnsweredAt: e.grade?.firstAnsweredAt ?? e.grade?.gradedAt ?? now },
+              updatedAt: now,
+            } : e),
         }));
         return true;
       },

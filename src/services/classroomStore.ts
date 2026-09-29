@@ -38,6 +38,11 @@ export interface ClassMember {
   lastActive?: string;
   biasScore?: string;
   assignmentsCompleted?: number;
+  // From public_stats (see PublicStats). Undefined until the student's app publishes them.
+  predictionsWritten?: number;
+  predictionsReviewed?: number;
+  reviewedOnTime?: number;
+  earliestCheckBackAt?: string | null;
 }
 
 export interface Assignment {
@@ -213,6 +218,10 @@ export const useClassroomStore = create<ClassroomState>()(
             portfolioReturn: stats.totalReturnPercent,
             lessonsCompleted: stats.lessonsCompletedCount,
             streak: stats.streak,
+            predictionsWritten: stats.predictionsWritten,
+            predictionsReviewed: stats.predictionsReviewed,
+            reviewedOnTime: stats.reviewedOnTime,
+            earliestCheckBackAt: stats.earliestCheckBackAt,
           } : m;
         };
         // Local only. These numbers are re-derived from public_stats on every

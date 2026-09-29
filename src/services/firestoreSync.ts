@@ -135,7 +135,10 @@ export async function savePublicStats(uid: string, stats: Omit<PublicStats, 'uid
     uid,
     ...stats,
     updatedAt: new Date().toISOString(),
-  });
+    // Merge, so a save never removes stored fields — in particular the
+    // prediction counts, which firestore.rules refuses to let any write drop
+    // once present (older app versions do a full replace; see the rule).
+  }, { merge: true });
 }
 
 export async function listLeaderboard(max = 100): Promise<PublicStats[]> {

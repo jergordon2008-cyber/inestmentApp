@@ -35,9 +35,25 @@ service cloud.firestore {
     // Small denormalized doc powering the leaderboard. Any signed-in student
     // can read everyone's public stats (that's the point of a leaderboard),
     // but can only write their own.
+    //
+    // The four prediction counts (classroom board, Phase D) can't be removed
+    // once present. App versions from before Phase D save this doc with a
+    // full replace and don't know these fields, so without this an old copy
+    // of the app left open would silently wipe them. Current versions write
+    // with merge, which keeps stored fields, so they always pass. A doc that
+    // never had the fields (student hasn't run the new version) is unaffected.
+    // "Present" means the key exists; earliestCheckBackAt may be null.
+    function keepsPredictionCounts() {
+      return (!('predictionsWritten'  in resource.data) || 'predictionsWritten'  in request.resource.data)
+          && (!('predictionsReviewed' in resource.data) || 'predictionsReviewed' in request.resource.data)
+          && (!('reviewedOnTime'      in resource.data) || 'reviewedOnTime'      in request.resource.data)
+          && (!('earliestCheckBackAt' in resource.data) || 'earliestCheckBackAt' in request.resource.data);
+    }
+
     match /public_stats/{uid} {
       allow read: if isSignedIn();
-      allow write: if isOwner(uid);
+      allow create, delete: if isOwner(uid);
+      allow update: if isOwner(uid) && keepsPredictionCounts();
     }
 
     // ── Classrooms ──────────────────────────────────────────────────────

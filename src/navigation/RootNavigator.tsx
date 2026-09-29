@@ -118,6 +118,8 @@ const findLesson = (id: string) =>
 const ROUTE_TO_TAB: Record<keyof TabParamList, TabName> = {
   Learn: 'learn', Portfolio: 'portfolio', Me: 'me',
 };
+/** Each tab stack's first screen — where re-tapping the active tab goes. */
+const TAB_HOME: Record<TabName, string> = { learn: 'LearnHome', portfolio: 'PortfolioHome', me: 'MeHome' };
 const TAB_TO_ROUTE = Object.fromEntries(
   Object.entries(ROUTE_TO_TAB).map(([route, tab]) => [tab, route]),
 ) as Record<TabName, keyof TabParamList>;
@@ -134,9 +136,17 @@ function AppTabBar({ state, navigation }: BottomTabBarProps) {
       // instead, matching the "tap active tab to go home" convention. If
       // the nested stack has never navigated past its first screen, its
       // `state` is undefined and there's nothing to pop.
+      //
+      // After a deep link, though, the tab's nested state is the partial one
+      // built from the URL: stale, with no key, so popToTop had no target and
+      // re-tapping did nothing. Then navigate to the tab's first screen with
+      // pop: true, which pops back to it (it's under the deep-linked screen,
+      // via initialRouteName in linking.ts) rather than pushing a new one.
       const nestedState = state.routes[state.index].state;
-      if (nestedState) {
+      if (nestedState?.key) {
         navigation.dispatch({ ...StackActions.popToTop(), target: nestedState.key });
+      } else if (nestedState) {
+        navigation.navigate(TAB_TO_ROUTE[tab], { screen: TAB_HOME[tab], pop: true } as never);
       }
       return;
     }

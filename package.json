@@ -7,7 +7,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "build:web": "expo export --platform web && sed -i '' 's|<script src=\"\\(/_expo/static/js/web/[^\"]*\\)\" defer></script>|<script type=\"module\" src=\"\\1\"></script>|' dist/index.html && node scripts/fix-vendor-assets.js",
+    "build:web": "expo export --platform web && node scripts/fix-index-html.js && node scripts/fix-vendor-assets.js",
     "test": "jest",
     "lint": "eslint ."
   },

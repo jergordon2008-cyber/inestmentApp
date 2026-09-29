@@ -27,7 +27,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { Card } from '../components/Card';
 import { useUserStore } from '../services/userStore';
-import { searchStocks, fetchBrowsableStocks, getStocksBySector } from '../services/marketDataFacade';
+import { fetchBrowsableStocks } from '../services/marketDataFacade';
 import { changeCaret, changeColor } from '../utils/change';
 import { Stock } from '../types';
 

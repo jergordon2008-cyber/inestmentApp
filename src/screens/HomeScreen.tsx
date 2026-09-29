@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, SafeAreaView,
   TouchableOpacity, Animated, Easing, Pressable,
@@ -66,6 +66,8 @@ function SlideUp({ children, delay = 0 }: { children: React.ReactNode; delay?: n
   );
 }
 
+const formatHeroValue = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 export function HomeScreen({
   onLessonPress, onPortfolioPress, onBrowseStocksPress,
   onJournalPress, onSignalPress, onMicroLessonPress, onAllLessonsPress,
@@ -90,6 +92,21 @@ export function HomeScreen({
   // starting balance — visually identical to a real $100,000 portfolio, so
   // a loading student and a genuinely fresh one were indistinguishable.
   const portfolioReady = !!portfolio;
+  // The hero value is sized to the space it actually gets. fs(50) alone
+  // clipped it ("100,000.0…") whenever the number was wider than planned: a
+  // seven-figure value, the larger Font Size setting, or a web window
+  // narrowed after load (fs() scales by the width read once at startup).
+  // ~0.56em per character covers these digits, commas and the period at
+  // this weight; the currency sign's width comes off the row first.
+  const [heroRowWidth, setHeroRowWidth] = useState(0);
+  const heroFit = useMemo(() => {
+    const base = fs(50);
+    if (!heroRowWidth) return null;
+    const available = heroRowWidth - fs(20) - 4;
+    const chars = formatHeroValue(portfolio?.totalValue ?? 0).length;
+    const size = Math.min(base, Math.floor(available / (chars * 0.56)));
+    return size < base ? { fontSize: size, lineHeight: Math.round(size * 1.12), letterSpacing: size < 40 ? -1 : -2 } : null;
+  }, [heroRowWidth, portfolio?.totalValue]);
   const totalValue     = portfolio?.totalValue ?? 0;
   const totalReturn    = portfolio?.totalReturn ?? 0;
   const totalReturnPct = portfolio?.totalReturnPercent ?? 0;
@@ -208,14 +225,15 @@ export function HomeScreen({
 
               {portfolioReady ? (
                 <>
-                  <View style={s.heroValueRow}>
+                  <View style={s.heroValueRow} onLayout={e => setHeroRowWidth(e.nativeEvent.layout.width)}>
                     <Text style={[s.heroCurrency, { color: theme.colors.textSecondary }]}>$</Text>
                     <AnimatedNumber
                       value={totalValue}
-                      formatter={n => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      formatter={formatHeroValue}
                       duration={1000}
                       delay={150}
-                      style={[s.heroValue, { color: theme.colors.textPrimary }]}
+                      numberOfLines={1}
+                      style={[s.heroValue, { color: theme.colors.textPrimary }, heroFit]}
                     />
                   </View>
 

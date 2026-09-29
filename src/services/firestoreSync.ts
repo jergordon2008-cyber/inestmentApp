@@ -126,8 +126,9 @@ export async function loadJournal(uid: string): Promise<JournalEntry[]> {
 export interface PublicStats {
   uid: string;
   displayName: string;
-  totalValue: number;
-  totalReturnPercent: number;
+  /** Null when the student has no portfolio to report — never a placeholder figure. */
+  totalValue: number | null;
+  totalReturnPercent: number | null;
   lessonsCompletedCount: number;
   streak: number;
   currentTier: number;

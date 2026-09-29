@@ -214,8 +214,10 @@ export const useClassroomStore = create<ClassroomState>()(
           const stats = statsByUid.get(m.id);
           return stats ? {
             ...m,
-            portfolioValue: stats.totalValue,
-            portfolioReturn: stats.totalReturnPercent,
+            // null (nothing real published) → undefined, which the board
+            // shows as "Not synced yet" / "—".
+            portfolioValue: stats.totalValue ?? undefined,
+            portfolioReturn: stats.totalReturnPercent ?? undefined,
             lessonsCompleted: stats.lessonsCompletedCount,
             streak: stats.streak,
             predictionsWritten: stats.predictionsWritten,

@@ -25,6 +25,11 @@ interface LeaderboardScreenProps {
   onBack: () => void;
 }
 
+/** "—" when a student has no portfolio to report (published as null), never a made-up 0%. */
+function formatReturn(pct: number | null | undefined): string {
+  return pct == null ? '—' : `${changeSign(pct)}${pct.toFixed(2)}%`;
+}
+
 export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
   const { theme } = useTheme();
   const user = useUserStore(state => state.user);
@@ -69,7 +74,7 @@ export function LeaderboardScreen({ onBack }: LeaderboardScreenProps) {
             <Text style={[styles.rankBannerReturn, {
               color: changeColor(userEntry.totalReturnPercent, theme),
             }]}>
-              {changeSign(userEntry.totalReturnPercent)}{userEntry.totalReturnPercent.toFixed(2)}%
+              {formatReturn(userEntry.totalReturnPercent)}
             </Text>
           </View>
         </View>
@@ -146,7 +151,7 @@ function LeaderboardRow({ entry, rank, isCurrentUser, theme }: {
       </View>
 
       <Text style={[styles.returnText, { color: returnTint }]}>
-        {changeSign(entry.totalReturnPercent)}{entry.totalReturnPercent.toFixed(2)}%
+        {formatReturn(entry.totalReturnPercent)}
       </Text>
     </View>
   );

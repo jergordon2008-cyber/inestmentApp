@@ -81,8 +81,13 @@ function writePublicStats(forUid: string): Promise<void> {
   return savePublicStats(forUid, {
     ...activity,
     displayName: user.displayName,
-    totalValue: portfolio?.totalValue ?? 100000,
-    totalReturnPercent: portfolio?.totalReturnPercent ?? 0,
+    // No portfolio, no number: null, not a made-up $100,000 / 0%. Null, not
+    // omitted: the save merges (an omitted field would keep an old number),
+    // and the leaderboard query orders by totalReturnPercent, which drops
+    // docs missing the field — the student would vanish from the class
+    // board. The classroom shows null as "Not synced yet".
+    totalValue: portfolio ? portfolio.totalValue : null,
+    totalReturnPercent: portfolio ? portfolio.totalReturnPercent : null,
     lessonsCompletedCount: user.lessonsCompleted.length,
     // As it stands today — a lapsed streak shows 0, not its last value.
     streak: currentStreak(streakFieldsOf(user), localDay()),

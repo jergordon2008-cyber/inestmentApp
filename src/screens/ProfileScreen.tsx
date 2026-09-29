@@ -104,19 +104,29 @@ export function ProfileScreen({
         {/* ── Stats row ── */}
         <FadeSlide delay={80}>
           <View style={[s.statsRow, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            {/* Until the portfolio loads there's no real value or return to
+                show — a shimmer, as on Home, not a made-up $100,000 / 0.0%. */}
             <View style={s.statItem}>
-              <AnimatedNumber
-                value={portfolio?.totalValue ?? 100000}
-                formatter={n => `$${Math.round(n).toLocaleString()}`}
-                style={[s.statVal, { color: theme.colors.textPrimary }]}
-              />
+              {portfolio ? (
+                <AnimatedNumber
+                  value={portfolio.totalValue}
+                  formatter={n => `$${Math.round(n).toLocaleString()}`}
+                  style={[s.statVal, { color: theme.colors.textPrimary }]}
+                />
+              ) : (
+                <View accessibilityLabel="Loading portfolio" style={[s.statSkeleton, { width: 72, backgroundColor: theme.colors.shimmer }]} />
+              )}
               <Text style={[s.statLabel, { color: theme.colors.textTertiary }]}>Portfolio</Text>
             </View>
             <View style={[s.statDivider, { backgroundColor: theme.colors.border }]} />
             <View style={s.statItem}>
-              <Text style={[s.statVal, { color: returnTint }]}>
-                {changeSign(portfolio?.totalReturn)}{(portfolio?.totalReturnPercent ?? 0).toFixed(1)}%
-              </Text>
+              {portfolio ? (
+                <Text style={[s.statVal, { color: returnTint }]}>
+                  {changeSign(portfolio.totalReturn)}{portfolio.totalReturnPercent.toFixed(1)}%
+                </Text>
+              ) : (
+                <View accessibilityLabel="Loading return" style={[s.statSkeleton, { width: 48, backgroundColor: theme.colors.shimmer }]} />
+              )}
               <Text style={[s.statLabel, { color: theme.colors.textTertiary }]}>Return</Text>
             </View>
             <View style={[s.statDivider, { backgroundColor: theme.colors.border }]} />
@@ -359,6 +369,7 @@ const s = StyleSheet.create({
   },
   signOutText: { fontSize: 14, fontWeight: '700' },
 
+  statSkeleton: { height: 20, borderRadius: 6, marginBottom: 4 },
   modalOverlay: { flex: 1, justifyContent: 'flex-end' },
   modalCard: {
     borderTopLeftRadius: 24, borderTopRightRadius: 24,

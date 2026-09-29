@@ -42,7 +42,20 @@ export async function loadUserProfile(uid: string): Promise<User | null> {
   const d = getFirebaseDb();
   if (!d) return null;
   const snap = await getDoc(doc(d, 'users', uid));
-  return snap.exists() ? (snap.data() as User) : null;
+  if (!snap.exists()) return null;
+  const data = snap.data() as Partial<User>;
+  // Only a profile that belongs to this account and was actually built counts.
+  // A copied one (another account's id — the stale-local-user bug) or an
+  // emptied one (the fix for such a copy: the doc can't be deleted) is treated
+  // as no profile, so sign-in goes to onboarding and builds a fresh profile
+  // from this account's own details instead of inheriting someone else's and
+  // then having every save refused by the id guard. Every profile the app
+  // creates (createNewUser) has id, displayName and createdAt.
+  if (data.id !== uid || typeof data.displayName !== 'string' || !data.createdAt) {
+    console.warn(`[auth] users/${uid} is not a usable profile for this account; treating as none`);
+    return null;
+  }
+  return data as User;
 }
 
 /**

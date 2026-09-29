@@ -200,7 +200,7 @@ export const tier1Lessons: Lesson[] = [
       {
         id: 'T1L02S6',
         type: 'text',
-        title: 'Dollar-cost averaging: the only timing strategy that works',
+        title: 'Dollar-cost averaging: invest without guessing the timing',
         content: 'Nobody knows when the market will be highest or lowest. Dollar-cost averaging (DCA) sidesteps this problem entirely: invest a fixed dollar amount on a fixed schedule, regardless of price. Example: $500 every month into VOO, an S&P 500 ETF. When prices are high, you buy fewer shares. When prices crash (which WILL happen), you automatically buy more shares at the discount. You never have to guess whether now is the right time to buy — the schedule decides for you — and it requires no skill, no analysis, and about 10 minutes per year.',
       },
       {
@@ -306,7 +306,7 @@ export const tier1Lessons: Lesson[] = [
         id: 'T1L03S1',
         type: 'text',
         title: 'The four numbers that actually matter',
-        content: 'Most stock pages drown you in data. For your first investments, only four numbers really matter: (1) Current price — what one share costs right now. (2) Market cap — total company value. (3) P/E ratio — how expensive the stock is relative to profits. (4) Dividend yield — what cash, if any, the company pays you each year. Master these four and you\'re ahead of 90% of casual investors.',
+        content: 'Most stock pages drown you in data. For your first investments, only four numbers really matter: (1) Current price — what one share costs right now. (2) Market cap — total company value. (3) P/E ratio — how expensive the stock is relative to profits. (4) Dividend yield — what cash, if any, the company pays you each year. Once you can read these four, the rest of a stock page is detail you can learn as you go.',
       },
       {
         id: 'T1L03S2',
@@ -1031,7 +1031,7 @@ export const tier1Lessons: Lesson[] = [
             'Required by SEC rules',
           ],
           correctIndex: 1,
-          explanation: 'Writing your thesis forces real thinking. It\'s the single biggest behavioral difference between consistent investors and gamblers.',
+          explanation: 'Writing your thesis forces you to think the trade through before you commit money, and gives you something concrete to check it against later.',
         },
         {
           id: 'q3',

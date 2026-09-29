@@ -44,9 +44,20 @@ function waitForHydration(p: { hasHydrated: () => boolean; onFinishHydration: (f
 // Cloud writes, handed to syncStatus.requestSave. Each reads the store when
 // it runs rather than taking a value, because syncStatus calls it again for
 // every retry and a retry must send the latest state, not the one that failed.
+// Every write below refuses a user object that belongs to another account.
+// The local user store can briefly hold a previous account's user — a sign-in
+// sets the new uid before the new profile has loaded, and another tab can
+// re-persist its in-memory user after this tab signed out — and writing it
+// here once copied one account's id, email and name into another's profile.
+function belongsTo(user: { id: string } | null, forUid: string, what: string): boolean {
+  if (!user) return false;
+  if (user.id === forUid) return true;
+  console.error(`[sync] refused to save ${what} for ${forUid}: local user belongs to ${user.id}`);
+  return false;
+}
 function writeProfile(forUid: string): Promise<void> {
   const user = useUserStore.getState().user;
-  return user ? saveUserProfile(forUid, user) : Promise.resolve();
+  return user && belongsTo(user, forUid, 'profile') ? saveUserProfile(forUid, user) : Promise.resolve();
 }
 function writePortfolio(forUid: string): Promise<void> {
   const portfolio = usePortfolioStore.getState().portfolio;
@@ -59,7 +70,7 @@ function writeJournal(forUid: string): Promise<void> {
 function writePublicStats(forUid: string): Promise<void> {
   const user = useUserStore.getState().user;
   const portfolio = usePortfolioStore.getState().portfolio;
-  if (!user || (portfolio && portfolio.userId !== forUid)) return Promise.resolve();
+  if (!user || !belongsTo(user, forUid, 'public stats') || (portfolio && portfolio.userId !== forUid)) return Promise.resolve();
   // Prediction counts for the classroom board, only from this account's own
   // journal. Never accuracy — that stays private to the student.
   const journal = useTradeJournalStore.getState();
@@ -247,7 +258,27 @@ function AppContent() {
   // this student's profile, portfolio, and journal from Firestore.
   useEffect(() => {
     const unsubscribe = subscribeToAuthChanges(async (fbUser) => {
-      if (!fbUser) { setRestoringSession(false); return; }
+      if (!fbUser) {
+        // No Firebase session: nothing local may act as a signed-in account.
+        // Fires at launch when signed out, and in every open tab when any tab
+        // signs out — without this, a tab that stayed open kept the previous
+        // account's user in memory and in storage, and the next sign-in (in
+        // any tab) could save it into the new account. Portfolio and journal
+        // data are left alone: they carry their owner, reconciliation backs
+        // up another account's copy rather than merging it, and clearing them
+        // here could discard this tab's unsaved work.
+        if (useUserStore.getState().user || useUserStore.getState().isAuthenticated) {
+          console.warn('[auth] signed out elsewhere or session ended; clearing the local user');
+          resetSync();
+          setUid(null);
+          setAuthEmail('');
+          setPortfolioReadyFor(null);
+          setJournalReadyFor(null);
+          useUserStore.getState().logout();
+        }
+        setRestoringSession(false);
+        return;
+      }
       setUid(fbUser.uid);
       setAuthEmail(fbUser.email ?? '');
       try {

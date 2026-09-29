@@ -227,6 +227,32 @@ function KeyConceptBlock({ title, content, theme, index }: { title: string; cont
 }
 
 // ── Inline Quiz / Scenario Question ──────────────────────────────────────────
+type AnswerState = 'idle' | 'correct' | 'incorrect';
+
+/**
+ * Colours for an inline question card in each answer state — theme tokens
+ * only, so light and dark mode both follow the palette. The card's accent
+ * (a scenario's info-blue left edge) is its identity and never changes; the
+ * answer state only tints the other edges, the options and the result banner.
+ * Applied per side: a `borderColor` shorthand on top used to repaint all four
+ * sides on web and wipe the accent out.
+ */
+function questionCardColors(theme: any, isScenario: boolean, state: AnswerState) {
+  const c = theme.colors;
+  const edge =
+    state === 'correct'   ? c.success + '40' :
+    state === 'incorrect' ? c.danger + '40' :
+    isScenario            ? c.info + '40' : c.borderStrong;
+  return {
+    edge,
+    accent: isScenario ? c.info : edge,
+    optionCorrectBg: c.successGlow,
+    optionWrongBg: c.dangerGlow,
+    bannerBg: state === 'correct' ? c.successGlow : c.dangerGlow,
+    bannerBorder: (state === 'correct' ? c.success : c.danger) + '50',
+  };
+}
+
 function InlineQuestion({
   question, index, onAnswer, theme,
 }: {
@@ -242,6 +268,8 @@ function InlineQuestion({
   const s = blockStyles(theme);
   const isScenario = question.type === 'scenario';
   const wasCorrect = selected !== null && selected === question.correctIndex;
+  const answerState: AnswerState = !revealed ? 'idle' : wasCorrect ? 'correct' : 'incorrect';
+  const colors = questionCardColors(theme, isScenario, answerState);
 
   const shake = () => {
     Animated.sequence([
@@ -287,11 +315,11 @@ function InlineQuestion({
       text: theme.colors.textPrimary, icon: null,
     };
     if (i === question.correctIndex) return {
-      bg: '#14532D22', border: theme.colors.success,
+      bg: colors.optionCorrectBg, border: theme.colors.success,
       text: theme.colors.success, icon: 'checkmark' as const,
     };
     if (i === selected && i !== question.correctIndex) return {
-      bg: '#7F1D1D22', border: theme.colors.danger,
+      bg: colors.optionWrongBg, border: theme.colors.danger,
       text: theme.colors.danger, icon: 'close' as const,
     };
     return {
@@ -304,16 +332,18 @@ function InlineQuestion({
   const badgeText = isScenario ? theme.colors.info         : theme.colors.gold;
   const badgeLabel = isScenario ? 'SCENARIO' : 'QUICK CHECK';
   const badgeIcon: IoniconName = isScenario ? 'locate-outline' : 'help-circle-outline';
-  const cardBorder = isScenario ? theme.colors.info + '40' : theme.colors.borderStrong;
 
   return (
     <AnimatedBlock delay={index * 80}>
       <Animated.View style={[
         s.quizCard,
-        { backgroundColor: theme.colors.surfaceElevated, borderColor: cardBorder,
-          transform: [{ translateX: shakeX }, { scale: successS }] },
-        isScenario && { borderLeftWidth: 3, borderLeftColor: theme.colors.info },
-        revealed && { borderColor: wasCorrect ? theme.colors.success : theme.colors.danger },
+        {
+          backgroundColor: theme.colors.surfaceElevated,
+          borderTopColor: colors.edge, borderRightColor: colors.edge, borderBottomColor: colors.edge,
+          borderLeftColor: colors.accent,
+          transform: [{ translateX: shakeX }, { scale: successS }],
+        },
+        isScenario && { borderLeftWidth: 3 },
       ]}>
         <View style={s.quizHeader}>
           <View style={[s.quizBadge, { backgroundColor: badgeBg, flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
@@ -355,9 +385,7 @@ function InlineQuestion({
         {revealed && (
           <Animated.View style={[
             s.resultBanner,
-            wasCorrect
-              ? { backgroundColor: '#14532D30', borderColor: theme.colors.success + '50' }
-              : { backgroundColor: '#7F1D1D28', borderColor: theme.colors.danger + '50' },
+            { backgroundColor: colors.bannerBg, borderColor: colors.bannerBorder },
             { opacity: resultA, transform: [{ translateY: resultY }] },
           ]}>
             <Ionicons

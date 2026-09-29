@@ -22,7 +22,7 @@ import { initializeLivePrices } from './src/services/stockDataService';
 import { TourGuide } from './src/components/TourGuide';
 import { reconcilePortfolio, savePortfolioBackups, ReconcileResult } from './src/services/portfolioReconcile';
 import { reconcileJournal, saveJournalBackups, JournalReconcileResult } from './src/services/journalReconcile';
-import { requestSave, resetSync, setSyncAccount, loadUnsavedFlags, useSyncStatusStore } from './src/services/syncStatus';
+import { requestSave, resetSync, setSyncAccount, loadUnsavedFlags, useSyncStatusStore, selectHasUnsaved } from './src/services/syncStatus';
 import type { Portfolio } from './src/types';
 
 /**
@@ -384,10 +384,31 @@ function AppContent() {
     setTimeout(() => setShowTour(true), 600);
   };
 
-  // Sign-out clears this account's data from the device, so anything still
-  // unsaved is gone — ProfileScreen warns before it gets here. Its flags go
-  // too: there's nothing left for them to retry.
-  const handleSignOut = () => {
+  // Sign-out clears this account's data from the device. ProfileScreen warns
+  // when something hasn't reached the cloud; if the student signs out anyway,
+  // the device copies are backed up first (same lists reconciliation uses),
+  // and sign-out is refused if that backup can't be written. The flags go
+  // too: there's nothing left on the device for them to retry.
+  const handleSignOut = async () => {
+    const forUid = uid;
+    if (forUid && selectHasUnsaved(useSyncStatusStore.getState())) {
+      const reason = `signed out of ${forUid} with changes not yet saved to the cloud`;
+      const portfolioNow = usePortfolioStore.getState().portfolio;
+      const journalNow = useTradeJournalStore.getState();
+      try {
+        if (portfolioNow && portfolioNow.userId === forUid) {
+          await savePortfolioBackups([{ reason, portfolio: portfolioNow }]);
+        }
+        if (journalNow.entries.length > 0 && journalNow.ownerUid === forUid) {
+          await saveJournalBackups([{ reason, entries: journalNow.entries }]);
+        }
+        console.warn('[auth] unsaved changes backed up on this device before sign-out');
+      } catch (e) {
+        console.error('[auth] could not back up unsaved changes; not signing out', e);
+        showAlert('Couldn\'t sign out', 'Your unsaved changes couldn\'t be backed up on this device, so you\'re still signed in. Try again, or reconnect so they can save.');
+        return;
+      }
+    }
     flushScreenBuffer();
     signOutUser().catch(e => console.error('[auth] sign-out failed', e));
     resetSync({ clearFlagsFor: uid ?? undefined });

@@ -238,10 +238,10 @@ export function ProfileScreen({
                 <Text style={[s.modalTitle, { color: theme.colors.textPrimary }]}>You have unsaved changes</Text>
                 <Text style={[s.modalBody, { color: theme.colors.textSecondary }]}>
                   {hasFailed
-                    ? "Your latest changes haven't saved to the cloud. Signing out now would lose them. Retry to save them to your account first."
+                    ? "Your latest changes haven't saved to the cloud. If you sign out now they won't reach your account; a backup copy stays on this device only. Retry to save them first."
                     : saving
-                      ? 'Your latest changes are still saving to the cloud. Signing out now would lose them.'
-                      : "Changes from your last session haven't saved to the cloud, and signing out now would lose them. Reconnect and reopen the app to save them."}
+                      ? "Your latest changes are still saving to the cloud. If you sign out now they won't reach your account; a backup copy stays on this device only."
+                      : "Changes from your last session haven't saved to the cloud. If you sign out now they won't reach your account; a backup copy stays on this device only. Reconnect and reopen the app to save them."}
                 </Text>
                 {(hasFailed || saving) && (
                   <TouchableOpacity

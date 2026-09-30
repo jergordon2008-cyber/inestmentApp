@@ -5,6 +5,26 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { useSubscriptionStore, PREMIUM_FEATURES, PremiumFeatureKey } from '../services/subscriptionStore';
+import { FEATURES } from '../config/features';
+
+/**
+ * Which premium features the paywall may advertise: only ones a student can
+ * actually reach. Tied to the navigation flags, so a feature reappears here
+ * when it's un-hidden. Typed per key, so adding a PREMIUM_FEATURES entry
+ * forces a decision here. (PREMIUM_FEATURES itself stays whole — its keys
+ * also drive canUseFeature gates.)
+ */
+const ADVERTISED: Record<PremiumFeatureKey, boolean> = {
+  timeMachine:       FEATURES.timeMachine,
+  futureSim:         FEATURES.futureSimulator,
+  investorDNA:       FEATURES.investorDNA,
+  healthScore:       FEATURES.healthScore,
+  moodGuard:         true,
+  aiTutorUnlimited:  FEATURES.aiTutor,
+  advancedPlaybooks: FEATURES.playbooks,
+  community:         FEATURES.forum,
+  advancedLessons:   true,
+};
 
 interface Props {
   onBack: () => void;
@@ -70,7 +90,7 @@ export function SubscriptionScreen({ onBack, lockedFeature, onSubscribed }: Prop
             </Text>
           ) : (
             <Text style={[s.heroSub, { color: theme.colors.textSecondary }]}>
-              Advanced simulators, unlimited AI tutor, and the full playbook library.
+              Mood guardrails before every trade and the full Tier 2 & 3 curriculum.
             </Text>
           )}
           {!premium && (
@@ -81,7 +101,7 @@ export function SubscriptionScreen({ onBack, lockedFeature, onSubscribed }: Prop
         </LinearGradient>
 
         <View style={s.featureList}>
-          {(Object.keys(PREMIUM_FEATURES) as PremiumFeatureKey[]).map(key => {
+          {(Object.keys(PREMIUM_FEATURES) as PremiumFeatureKey[]).filter(key => ADVERTISED[key]).map(key => {
             const f = PREMIUM_FEATURES[key];
             return (
               <View key={key} style={[s.featureRow, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>

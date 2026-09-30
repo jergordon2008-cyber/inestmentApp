@@ -405,7 +405,6 @@ function StockDetailRoute() {
       onBack={back}
       onTrade={flow.openTrade}
       onLessonPress={flow.openLesson}
-      onExplainPress={flow.explain}
     />
   );
 }

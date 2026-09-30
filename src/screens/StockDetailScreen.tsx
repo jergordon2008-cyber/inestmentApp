@@ -23,7 +23,6 @@ interface Props {
   onBack: () => void;
   onTrade: (symbol: string, action: 'buy' | 'sell') => void;
   onLessonPress: (lessonId: string) => void;
-  onExplainPress: (term: string) => void;
 }
 
 export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Props) {

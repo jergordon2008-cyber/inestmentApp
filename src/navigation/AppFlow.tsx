@@ -4,8 +4,7 @@
  * The cross-screen behaviour that used to live in App.tsx's modal state:
  * the lesson paywall gate, the mood -> decision-journal -> trade interceptor
  * chain, the thesis that a student writes before a trade and that only becomes
- * a real journal entry once the trade executes, the skill-tree round trip, and
- * the AI "explain this term" overlay.
+ * a real journal entry once the trade executes, and the skill-tree round trip.
  *
  * It lives in one provider rather than in each screen because every one of
  * these flows crosses screens: a lesson can be opened from Home, Learn,
@@ -24,7 +23,6 @@ import { getChallengeForLesson } from '../data/lessonChallenges';
 import { MoodGuardrailModal } from '../screens/MoodGuardrailModal';
 import type { Mood } from '../services/moodStore';
 import { DecisionJournalModal } from '../screens/DecisionJournalScreen';
-import { AIExplainModal } from '../components/AIExplainModal';
 import { navigate, replace, goBack, goTab } from './navigationRef';
 import type { RootStackParamList } from './types';
 import type { Trade, TradeType } from '../types';
@@ -49,7 +47,6 @@ interface AppFlowValue {
   openSubscription: (lockedFeature?: string) => void;
   /** Navigates only if the plan allows it, otherwise shows the paywall. */
   openGated: (route: keyof RootStackParamList, featureKey: string, label: string) => void;
-  explain: (term: string) => void;
   /**
    * The prediction written for the buy in progress, bound to one symbol.
    * Consumers must check the symbol (isPredictionFor) — never assume it
@@ -81,7 +78,6 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
   const user = useUserStore(s => s.user);
   const createJournalEntry = useTradeJournalStore(s => s.createEntry);
 
-  const [explainTerm, setExplainTerm] = useState<string | null>(null);
   // The mood picked in the mood check, bound to the symbol it was picked for,
   // so it can be recorded on that buy's prediction and graded with it.
   const [pendingMood, setPendingMood] = useState<{ symbol: string; mood: Mood } | null>(null);
@@ -222,7 +218,6 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
     openTradeDirect,
     openSubscription,
     openGated,
-    explain: setExplainTerm,
     pendingPrediction,
     requestPrediction,
     clearPendingPrediction,
@@ -265,7 +260,6 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
         }}
       />
 
-      {explainTerm && <AIExplainModal term={explainTerm} onClose={() => setExplainTerm(null)} />}
     </AppFlowContext.Provider>
   );
 }

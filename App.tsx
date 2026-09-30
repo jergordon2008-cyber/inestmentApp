@@ -26,6 +26,7 @@ import { requestSave, resetSync, setSyncAccount, loadUnsavedFlags, useSyncStatus
 import { predictionActivity } from './src/services/predictionGrading';
 import { streakFieldsOf, currentStreak, localDay, reconcileStreak, legacyStreakCandidate, StreakFields } from './src/services/dailyStreak';
 import { useStreakStore } from './src/services/streakStore';
+import { reconcileLessons } from './src/services/profileReconcile';
 import type { User } from './src/types';
 import type { Portfolio } from './src/types';
 
@@ -256,6 +257,18 @@ function AppContent() {
     return changed ? { ...profile, ...fields } : profile;
   };
 
+  /**
+   * Lessons finished on this device but not yet saved (offline, or the app
+   * closed first) would be erased by the cloud-wins profile load. Merged
+   * back in (profileReconcile.reconcileLessons) when the local user is this
+   * account; saved by the ordinary guarded profile save when setUser runs.
+   */
+  const resolveLessons = (forUid: string, profile: User): User => {
+    const local = useUserStore.getState().user;
+    const { progress, changed } = reconcileLessons(profile, local && local.id === forUid ? local : null);
+    return changed ? { ...profile, ...progress } : profile;
+  };
+
   const adoptJournal = (forUid: string, result: JournalReconcileResult) => {
     setJournalEntries(result.entries, forUid);
     const unsavedLastSession = useSyncStatusStore.getState().unsaved.journal === forUid;
@@ -337,8 +350,10 @@ function AppContent() {
         const decision = await resolvePortfolio(forUid, remotePortfolio);
         const journalDecision = await resolveJournal(forUid, entries, remotePortfolio);
         const withStreak = await resolveStreak(forUid, profile, remotePortfolio);
+        // resolveStreak has waited for the user store to restore from storage.
+        const withProgress = resolveLessons(forUid, withStreak);
         adoptPortfolio(forUid, decision);
-        setUser(withStreak);
+        setUser(withProgress);
         setOnboarded(true);
         adoptJournal(forUid, journalDecision);
       } else {

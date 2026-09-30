@@ -32,15 +32,20 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 
-export type SyncDoc = 'profile' | 'portfolio' | 'journal' | 'publicStats';
+export type SyncDoc = 'profile' | 'portfolio' | 'journal' | 'publicStats' | 'classroom';
 export type SyncState = 'idle' | 'saving' | 'saved' | 'failed';
 
 /**
  * Documents holding the student's own work. public_stats is derived from
  * these and rewritten every five minutes, so its failures are logged and
  * retried but don't tell the student their work is unsaved.
+ *
+ * 'classroom' is the queue of class posts this account made (assignments,
+ * announcements, completions — classroomStore's pendingOps), not a single
+ * document: each is a separate operation, so its write function sends every
+ * queued one rather than "the latest state".
  */
-export const USER_DATA_DOCS: SyncDoc[] = ['profile', 'portfolio', 'journal'];
+export const USER_DATA_DOCS: SyncDoc[] = ['profile', 'portfolio', 'journal', 'classroom'];
 
 /** The documents whose unsaved state is persisted across restarts. */
 export type FlaggedDoc = 'portfolio' | 'journal';
@@ -70,7 +75,7 @@ export interface SyncStatusState {
 
 const IDLE: DocSyncStatus = { state: 'idle', inFlight: false, permanent: false, lastError: null };
 const idleDocs = (): Record<SyncDoc, DocSyncStatus> =>
-  ({ profile: { ...IDLE }, portfolio: { ...IDLE }, journal: { ...IDLE }, publicStats: { ...IDLE } });
+  ({ profile: { ...IDLE }, portfolio: { ...IDLE }, journal: { ...IDLE }, publicStats: { ...IDLE }, classroom: { ...IDLE } });
 
 export const useSyncStatusStore = create<SyncStatusState>(() => ({
   uid: null,

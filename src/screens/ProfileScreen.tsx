@@ -50,7 +50,7 @@ function FadeSlide({ children, delay = 0 }: { children: React.ReactNode; delay?:
 /** What signing out with unsaved changes does to each kind of change. */
 const SIGN_OUT_NOTE =
   "If you sign out now, portfolio and journal changes won't reach your account; a backup copy stays on this device only. " +
-  "Profile details are kept on this device and saved the next time you sign in here.";
+  "Profile details and class posts are kept on this device and saved the next time you sign in here.";
 
 export function ProfileScreen({
   onSignOut, onRestartOnboarding, onReplayTourPress, onJournalPress, onClassroomPress, onPrivacyPress, onTermsPress,

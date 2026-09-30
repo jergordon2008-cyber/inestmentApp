@@ -26,6 +26,7 @@ import { requestSave, resetSync, setSyncAccount, loadUnsavedFlags, useSyncStatus
 import { predictionActivity } from './src/services/predictionGrading';
 import { streakFieldsOf, currentStreak, localDay, reconcileStreak, legacyStreakCandidate, StreakFields } from './src/services/dailyStreak';
 import { useStreakStore } from './src/services/streakStore';
+import { useClassroomStore } from './src/services/classroomStore';
 import { reconcileLessons, recoverProfile, stashUnsavedProfile, readUnsavedProfile, clearUnsavedProfile } from './src/services/profileReconcile';
 import type { User } from './src/types';
 import type { Portfolio } from './src/types';
@@ -385,6 +386,8 @@ function AppContent() {
         setOnboarded(true);
         adoptJournal(forUid, journalDecision);
         clearUnsavedProfile(forUid).catch(e => console.error('[auth] could not clear the unsaved-profile stash', e));
+        // Class posts this account made here that never reached the cloud.
+        useClassroomStore.getState().resumePendingOps(forUid);
       } else {
         // Signed up but never finished onboarding: there's no cloud portfolio
         // yet. Reconciling against nothing still matters — a device left

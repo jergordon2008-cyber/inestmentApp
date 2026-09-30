@@ -22,6 +22,7 @@ import {
   addClassroomMember, appendAssignment, appendAnnouncement, replaceAssignments,
   listClassroomsForUser, listLeaderboard,
 } from './firestoreSync';
+import { requestSave, useSyncStatusStore } from './syncStatus';
 
 export type UserRole = 'student' | 'teacher';
 
@@ -83,8 +84,49 @@ export interface Classroom {
   announcements: Announcement[];
 }
 
+/**
+ * A class post made on this device that Firestore hasn't acknowledged yet.
+ * Each is a separate operation — sending only "the latest state" would drop
+ * earlier ones — and each is safe to send again: arrayUnion of an identical
+ * item adds nothing, and completion re-reads and adds the student to a set.
+ * Tagged with the account that made it, and only that account sends it.
+ */
+export type PendingClassroomOp =
+  | { id: string; uid: string; classId: string; kind: 'assignment'; assignment: Assignment }
+  | { id: string; uid: string; classId: string; kind: 'announcement'; announcement: Announcement }
+  | { id: string; uid: string; classId: string; kind: 'complete'; assignmentId: string; userId: string };
+
+/**
+ * The classroom as it stands with this device's unsent posts laid over it:
+ * after a reload from the cloud, still-pending items are shown (and marked
+ * pending on screen) rather than silently vanishing. Pure; idempotent.
+ */
+export function withPendingOps(c: Classroom, ops: PendingClassroomOp[]): Classroom {
+  let assignments = c.assignments;
+  let announcements = c.announcements;
+  for (const op of ops) {
+    if (op.classId !== c.id) continue;
+    if (op.kind === 'assignment' && !assignments.some(a => a.id === op.assignment.id)) {
+      assignments = [...assignments, op.assignment];
+    } else if (op.kind === 'announcement' && !announcements.some(a => a.id === op.announcement.id)) {
+      announcements = [op.announcement, ...announcements];
+    } else if (op.kind === 'complete') {
+      // Only a new array when a student is actually added, so "nothing to
+      // write" is detectable (an already-complete assignment isn't rewritten).
+      const i = assignments.findIndex(a => a.id === op.assignmentId && !(a.completedBy ?? []).includes(op.userId));
+      if (i >= 0) {
+        const a = assignments[i];
+        assignments = [...assignments.slice(0, i), { ...a, completedBy: [...(a.completedBy ?? []), op.userId] }, ...assignments.slice(i + 1)];
+      }
+    }
+  }
+  return assignments === c.assignments && announcements === c.announcements ? c : { ...c, assignments, announcements };
+}
+
 interface ClassroomState {
   classrooms: Classroom[];
+  /** Class posts not yet acknowledged by Firestore (see PendingClassroomOp). Persisted. */
+  pendingOps: PendingClassroomOp[];
   activeClassroomId: string | null;
   myRole: UserRole;
   isTeacher: boolean;
@@ -98,6 +140,8 @@ interface ClassroomState {
   addAssignment: (classId: string, a: Omit<Assignment, 'id' | 'completedBy'>) => Promise<void>;
   completeAssignment: (classId: string, assignmentId: string, userId: string) => Promise<void>;
   postAnnouncement: (classId: string, a: Omit<Announcement, 'id' | 'postedAt'>) => Promise<void>;
+  /** Asks the sync layer to send `uid`'s pending class posts (after sign-in, or a reload). */
+  resumePendingOps: (uid: string) => void;
 }
 
 function genId() { return Math.random().toString(36).slice(2, 10); }
@@ -127,6 +171,7 @@ function normalize(c: Classroom): Classroom {
 export const useClassroomStore = create<ClassroomState>()(
   persist(
     (set, get) => ({
+      pendingOps: [],
       classrooms: [],
       activeClassroomId: null,
       myRole: 'student',
@@ -201,7 +246,15 @@ export const useClassroomStore = create<ClassroomState>()(
 
       loadMyClassrooms: async (uid) => {
         const mine = await listClassroomsForUser(uid);
-        set({ classrooms: mine.map(normalize) });
+        const pending = get().pendingOps.filter(op => op.uid === uid);
+        set({ classrooms: mine.map(normalize).map(c => withPendingOps(c, pending)) });
+        get().resumePendingOps(uid);
+      },
+
+      resumePendingOps: (uid) => {
+        if (get().pendingOps.some(op => op.uid === uid)) {
+          requestSave('classroom', uid, () => flushPendingClassroomOps(uid));
+        }
       },
 
       // Pulls real portfolioValue/return/lessons/streak for every member
@@ -237,34 +290,42 @@ export const useClassroomStore = create<ClassroomState>()(
         }));
       },
 
+      // Class posts: shown at once, queued, and sent through the sync layer
+      // (saving / saved / failed, retry with backoff, the sync banner). They
+      // used to await the write directly, so a failure was an unhandled
+      // promise and the screen looked saved when it wasn't.
       addAssignment: async (classId, a) => {
         const classroom = get().classrooms.find(c => c.id === classId);
-        if (!classroom) return;
+        const uid = useSyncStatusStore.getState().uid;
+        if (!classroom || !uid) return;
         const assignment: Assignment = { ...a, id: genId(), completedBy: [] };
-        set(s => ({ classrooms: s.classrooms.map(c => c.id === classId ? { ...c, assignments: [...c.assignments, assignment] } : c) }));
-        await appendAssignment(classId, assignment);
+        set(s => ({
+          classrooms: s.classrooms.map(c => c.id === classId ? { ...c, assignments: [...c.assignments, assignment] } : c),
+          pendingOps: [...s.pendingOps, { id: assignment.id, uid, classId, kind: 'assignment', assignment }],
+        }));
+        get().resumePendingOps(uid);
       },
-
       completeAssignment: async (classId, assignmentId, userId) => {
         const local = get().classrooms.find(c => c.id === classId);
-        if (!local) return;
-        // Completion edits an element in place, so this has to rewrite the
-        // array. Re-read first to shrink the window in which a stale copy
-        // could drop an assignment the teacher just added.
-        const fresh = (await loadClassroom(classId)) ?? local;
-        const assignments = fresh.assignments.map(a => a.id !== assignmentId ? a : {
-          ...a, completedBy: [...new Set([...a.completedBy, userId])],
-        });
-        set(s => ({ classrooms: s.classrooms.map(c => c.id === classId ? { ...c, assignments } : c) }));
-        await replaceAssignments(classId, assignments);
+        const uid = useSyncStatusStore.getState().uid;
+        if (!local || !uid) return;
+        const op: PendingClassroomOp = { id: `complete-${assignmentId}-${userId}`, uid, classId, kind: 'complete', assignmentId, userId };
+        set(s => ({
+          classrooms: s.classrooms.map(c => c.id === classId ? withPendingOps(c, [op]) : c),
+          pendingOps: s.pendingOps.some(p => p.id === op.id) ? s.pendingOps : [...s.pendingOps, op],
+        }));
+        get().resumePendingOps(uid);
       },
-
       postAnnouncement: async (classId, a) => {
         const classroom = get().classrooms.find(c => c.id === classId);
-        if (!classroom) return;
+        const uid = useSyncStatusStore.getState().uid;
+        if (!classroom || !uid) return;
         const announcement: Announcement = { ...a, id: genId(), postedAt: new Date().toISOString() };
-        set(s => ({ classrooms: s.classrooms.map(c => c.id === classId ? { ...c, announcements: [announcement, ...c.announcements] } : c) }));
-        await appendAnnouncement(classId, announcement);
+        set(s => ({
+          classrooms: s.classrooms.map(c => c.id === classId ? { ...c, announcements: [announcement, ...c.announcements] } : c),
+          pendingOps: [...s.pendingOps, { id: announcement.id, uid, classId, kind: 'announcement', announcement }],
+        }));
+        get().resumePendingOps(uid);
       },
     }),
     {
@@ -273,3 +334,38 @@ export const useClassroomStore = create<ClassroomState>()(
     }
   )
 );
+
+/**
+ * The sync layer's write function for 'classroom': sends every pending post
+ * of `uid`, oldest first, removing each once Firestore acknowledges it.
+ * Reads the queue when called, so a retry sends whatever is still pending
+ * (including posts made since). Throws on the first failure, leaving it and
+ * everything after it queued — the sync layer retries or shows the failure.
+ */
+export async function flushPendingClassroomOps(uid: string): Promise<void> {
+  for (const op of useClassroomStore.getState().pendingOps.filter(o => o.uid === uid)) {
+    if (op.kind === 'assignment') {
+      await appendAssignment(op.classId, op.assignment);
+    } else if (op.kind === 'announcement') {
+      await appendAnnouncement(op.classId, op.announcement);
+    } else {
+      // Completion edits an element in place, so it rewrites the array.
+      // Re-read first to shrink the window in which a stale copy could drop
+      // an assignment the teacher just added.
+      const fresh = await loadClassroom(op.classId);
+      if (!fresh) throw new Error(`classroom ${op.classId} not found`);
+      // The raw document may lack the id field or an array; the op's own
+      // classId is authoritative.
+      const base: Classroom = { ...fresh, id: op.classId, assignments: fresh.assignments ?? [], announcements: fresh.announcements ?? [] };
+      const assignments = withPendingOps(base, [op]).assignments;
+      if (assignments !== base.assignments) await replaceAssignments(op.classId, assignments);
+    }
+    useClassroomStore.setState(s => ({ pendingOps: s.pendingOps.filter(o => o.id !== op.id) }));
+  }
+}
+
+/** Ids of this account's class posts still waiting to reach the cloud (for "not saved" markers). */
+export function usePendingClassroomIds(uid: string | undefined): Set<string> {
+  const ops = useClassroomStore(s => s.pendingOps);
+  return new Set(ops.filter(o => o.uid === uid).map(o => o.kind === 'complete' ? o.assignmentId : o.id));
+}

@@ -7,7 +7,9 @@ import { showAlert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { changeColor, changeSign } from '../utils/change';
-import { useClassroomStore, Classroom, Assignment, ClassMember } from '../services/classroomStore';
+import { useClassroomStore, Classroom, Assignment, ClassMember, usePendingClassroomIds } from '../services/classroomStore';
+import { useSyncStatusStore } from '../services/syncStatus';
+import { SyncBanner } from '../components/SyncBanner';
 import { useUserStore } from '../services/userStore';
 import { classReviewsOpen, ON_TIME_DAYS } from '../services/predictionGrading';
 
@@ -27,6 +29,8 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
     addAssignment, completeAssignment, postAnnouncement,
     setRole, setActiveClassroom } = useClassroomStore();
   const user = useUserStore(s => s.user);
+  const pendingClassroomIds = usePendingClassroomIds(user?.id);
+  const classroomSyncFailed = useSyncStatusStore(st => st.docs.classroom.state === 'failed');
 
   const [tab, setTab] = useState<Tab>('overview');
   const [setupPhase, setSetupPhase] = useState<'choose' | 'join' | 'create' | null>(null);
@@ -142,6 +146,14 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
   }
 
   const students = classroom.members.filter(m => m.role === 'student');
+  // Class posts not yet acknowledged by Firestore — marked on their cards
+  // rather than looking saved (see classroomStore.pendingOps).
+  const pendingIds = pendingClassroomIds;
+  const pendingNote = (id: string) => !pendingIds.has(id) ? null : (
+    <Text style={[s.pendingNote, { color: classroomSyncFailed ? theme.colors.warning : theme.colors.textTertiary }]}>
+      {classroomSyncFailed ? 'Not saved yet · will retry' : 'Saving…'}
+    </Text>
+  );
   // Week one: no prediction can have reached its check-back date, so nobody
   // can have a review yet. Switches on the data, not the calendar.
   const reviewsOpen = classReviewsOpen(students.map(m => m.earliestCheckBackAt), new Date());
@@ -177,6 +189,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
       </View>
 
       <ScrollView contentContainerStyle={s.pad} showsVerticalScrollIndicator={false}>
+        <SyncBanner />
         {tab === 'overview' && (
           <>
             <View style={s.statsRow}>
@@ -302,9 +315,10 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                 <Text style={[s.assignmentMeta, { color: theme.colors.textTertiary }]}>
                   {a.completedBy.length} completed · {a.points} pts · Due {new Date(a.dueDate).toLocaleDateString()}
                 </Text>
+                {pendingNote(a.id)}
                 {!isTeacher && user && !a.completedBy.includes(user.id) && (
                   <TouchableOpacity
-                    onPress={() => { if (user) completeAssignment(classroom.id, a.id, user.id); showAlert('Marked complete! ✅'); }}
+                    onPress={() => { if (user) completeAssignment(classroom.id, a.id, user.id); }}
                     style={[s.completeBtn, { borderColor: theme.colors.success }]}
                   >
                     <Text style={{ color: theme.colors.success, fontWeight: '700', fontSize: 12 }}>Mark Complete</Text>
@@ -334,7 +348,8 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                   onPress={() => {
                     postAnnouncement(classroom.id, { title: annTitle, body: annBody, postedBy: user?.displayName ?? 'Teacher', pinned: false });
                     setAnnTitle(''); setAnnBody('');
-                    showAlert('Posted', 'Your announcement is live.');
+                    // No "live" alert: it fired before the write landed. The card
+                    // shows "Saving…" until Firestore acknowledges it.
                   }}
                 >
                   <Text style={s.primaryBtnText}>Post</Text>
@@ -348,6 +363,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                 <Text style={[s.annTitle, { color: theme.colors.textPrimary }]}>{ann.title}</Text>
                 <Text style={[s.annBody, { color: theme.colors.textSecondary }]}>{ann.body}</Text>
                 <Text style={[s.annMeta, { color: theme.colors.textTertiary }]}>{ann.postedBy} · {new Date(ann.postedAt).toLocaleDateString()}</Text>
+                {pendingNote(ann.id)}
               </View>
             ))}
           </>
@@ -359,6 +375,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
 }
 
 const styles = (theme: any) => StyleSheet.create({
+  pendingNote: { fontSize: 11, fontWeight: '700', marginTop: 6 },
   container: { flex: 1, backgroundColor: theme.colors.background },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
   back: { color: theme.colors.primary, fontSize: 16, fontWeight: '600' },

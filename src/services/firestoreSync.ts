@@ -23,6 +23,7 @@ import { getFirebaseDb } from './firebase';
 import { User, Portfolio } from '../types';
 import { JournalEntry } from './tradeJournalStore';
 import type { Classroom, ClassMember, Assignment, Announcement } from './classroomStore';
+import { isUsableProfile } from './profileReconcile';
 
 function db() {
   const d = getFirebaseDb();
@@ -50,8 +51,8 @@ export async function loadUserProfile(uid: string): Promise<User | null> {
   // as no profile, so sign-in goes to onboarding and builds a fresh profile
   // from this account's own details instead of inheriting someone else's and
   // then having every save refused by the id guard. Every profile the app
-  // creates (createNewUser) has id, displayName and createdAt.
-  if (data.id !== uid || typeof data.displayName !== 'string' || !data.createdAt) {
+  // creates (createNewUser) has id, displayName and createdAt (isUsableProfile).
+  if (!isUsableProfile(data, uid)) {
     console.warn(`[auth] users/${uid} is not a usable profile for this account; treating as none`);
     return null;
   }

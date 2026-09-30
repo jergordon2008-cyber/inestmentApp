@@ -26,7 +26,7 @@ import { requestSave, resetSync, setSyncAccount, loadUnsavedFlags, useSyncStatus
 import { predictionActivity } from './src/services/predictionGrading';
 import { streakFieldsOf, currentStreak, localDay, reconcileStreak, legacyStreakCandidate, StreakFields } from './src/services/dailyStreak';
 import { useStreakStore } from './src/services/streakStore';
-import { reconcileLessons } from './src/services/profileReconcile';
+import { reconcileLessons, recoverProfile, stashUnsavedProfile, readUnsavedProfile, clearUnsavedProfile } from './src/services/profileReconcile';
 import type { User } from './src/types';
 import type { Portfolio } from './src/types';
 
@@ -269,6 +269,26 @@ function AppContent() {
     return changed ? { ...profile, ...progress } : profile;
   };
 
+  /**
+   * The profile to use when the cloud has none (profileReconcile.recoverProfile):
+   * the local user if it's this account's, or the one stashed for it at
+   * sign-out. Null means the account really hasn't onboarded.
+   */
+  const recoverUnsavedProfile = async (forUid: string): Promise<User | null> => {
+    await waitForHydration(useUserStore.persist);
+    const stashed = await readUnsavedProfile(forUid).catch(() => null);
+    const recovered = recoverProfile(forUid, [useUserStore.getState().user, stashed]);
+    if (recovered) console.warn(`[auth] no cloud profile for ${forUid}; using the one saved on this device and re-saving it`);
+    return recovered;
+  };
+
+  /** Stashes the local user if this session hasn't confirmed its profile reached the cloud. */
+  const stashProfileIfUnsaved = async (): Promise<void> => {
+    const local = useUserStore.getState().user;
+    if (!local || useSyncStatusStore.getState().docs.profile.state === 'saved') return;
+    await stashUnsavedProfile(local);
+  };
+
   const adoptJournal = (forUid: string, result: JournalReconcileResult) => {
     setJournalEntries(result.entries, forUid);
     const unsavedLastSession = useSyncStatusStore.getState().unsaved.journal === forUid;
@@ -338,11 +358,16 @@ function AppContent() {
   const loadAccount = (forUid: string): Promise<User | null> => {
     if (accountLoad.current?.uid === forUid) return accountLoad.current.promise;
     const promise = (async () => {
-      const [profile, remotePortfolio, entries] = await Promise.all([
+      const [cloudProfile, remotePortfolio, entries] = await Promise.all([
         loadUserProfile(forUid),
         loadPortfolio(forUid),
         loadJournal(forUid),
       ]);
+      // No cloud profile can still mean this account onboarded here and its
+      // first profile save never landed. Then the profile on this device —
+      // the local user, or the copy stashed at sign-out — is the account's,
+      // and re-running onboarding would throw its answers away.
+      const profile = cloudProfile ?? await recoverUnsavedProfile(forUid);
       if (profile) {
         // Reconcile BEFORE the other updates, so the render that follows
         // sees the settled portfolio. This replaced "cloud wins", which
@@ -353,9 +378,13 @@ function AppContent() {
         // resolveStreak has waited for the user store to restore from storage.
         const withProgress = resolveLessons(forUid, withStreak);
         adoptPortfolio(forUid, decision);
-        setUser(withProgress);
+        // A recovered profile whose portfolio never reached the cloud either,
+        // and isn't on this device any more: start the one onboarding would have.
+        if (!cloudProfile && !usePortfolioStore.getState().portfolio) initializePortfolio(forUid);
+        setUser(withProgress);    // the profile save effect sends it to the cloud
         setOnboarded(true);
         adoptJournal(forUid, journalDecision);
+        clearUnsavedProfile(forUid).catch(e => console.error('[auth] could not clear the unsaved-profile stash', e));
       } else {
         // Signed up but never finished onboarding: there's no cloud portfolio
         // yet. Reconciling against nothing still matters — a device left
@@ -388,6 +417,7 @@ function AppContent() {
         // here could discard this tab's unsaved work.
         if (useUserStore.getState().user || useUserStore.getState().isAuthenticated) {
           console.warn('[auth] signed out elsewhere or session ended; clearing the local user');
+          await stashProfileIfUnsaved().catch(e => console.error('[auth] could not stash an unsaved profile', e));
           resetSync();
           accountLoad.current = null;
           useStreakStore.getState().retireLegacyStreak();
@@ -540,6 +570,9 @@ function AppContent() {
         if (journalNow.entries.length > 0 && journalNow.ownerUid === forUid) {
           await saveJournalBackups([{ reason, entries: journalNow.entries }]);
         }
+        // A profile that never reached the cloud (e.g. the first save after
+        // onboarding failed) would otherwise be lost with the local user.
+        await stashProfileIfUnsaved();
         console.warn('[auth] unsaved changes backed up on this device before sign-out');
       } catch (e) {
         console.error('[auth] could not back up unsaved changes; not signing out', e);
@@ -563,6 +596,8 @@ function AppContent() {
   };
 
   const handleRestartOnboarding = () => {
+    // Deliberately starts over: no stash, and any earlier one is dropped.
+    if (uid) clearUnsavedProfile(uid).catch(e => console.error('[auth] could not clear the unsaved-profile stash', e));
     signOutUser().catch(e => console.error('[auth] sign-out failed', e));
     resetSync({ clearFlagsFor: uid ?? undefined });
     accountLoad.current = null;

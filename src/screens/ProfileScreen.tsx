@@ -285,7 +285,7 @@ export function ProfileScreen({
                   onPress={confirmSignOut}
                   style={[s.modalBtn, { backgroundColor: theme.colors.danger + '14', borderColor: theme.colors.danger + '30' }]}
                 >
-                  <Text style={[s.modalBtnText, { color: theme.colors.danger }]}>Sign out and lose changes</Text>
+                  <Text style={[s.modalBtnText, { color: theme.colors.danger }]}>Sign out anyway</Text>
                 </TouchableOpacity>
               </>
             ) : (

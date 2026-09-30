@@ -47,6 +47,11 @@ function FadeSlide({ children, delay = 0 }: { children: React.ReactNode; delay?:
   return <Animated.View style={{ opacity, transform: [{ translateY: y }] }}>{children}</Animated.View>;
 }
 
+/** What signing out with unsaved changes does to each kind of change. */
+const SIGN_OUT_NOTE =
+  "If you sign out now, portfolio and journal changes won't reach your account; a backup copy stays on this device only. " +
+  "Profile details are kept on this device and saved the next time you sign in here.";
+
 export function ProfileScreen({
   onSignOut, onRestartOnboarding, onReplayTourPress, onJournalPress, onClassroomPress, onPrivacyPress, onTermsPress,
   onBehavioralAssessmentPress, onPlaybooksPress, onMacroDashboardPress,
@@ -251,11 +256,16 @@ export function ProfileScreen({
                 </View>
                 <Text style={[s.modalTitle, { color: theme.colors.textPrimary }]}>You have unsaved changes</Text>
                 <Text style={[s.modalBody, { color: theme.colors.textSecondary }]}>
+                  {/* Portfolio and journal changes only get a device backup; an
+                      unsaved profile is stashed and saved at the next sign-in on
+                      this device (profileReconcile). Only portfolio and journal
+                      carry "unsaved" across sessions, so the last-session case
+                      names them. */}
                   {hasFailed
-                    ? "Your latest changes haven't saved to the cloud. If you sign out now they won't reach your account; a backup copy stays on this device only. Retry to save them first."
+                    ? `Your latest changes haven't saved to the cloud. ${SIGN_OUT_NOTE} Retry to save everything first.`
                     : saving
-                      ? "Your latest changes are still saving to the cloud. If you sign out now they won't reach your account; a backup copy stays on this device only."
-                      : "Changes from your last session haven't saved to the cloud. If you sign out now they won't reach your account; a backup copy stays on this device only. Reconnect and reopen the app to save them."}
+                      ? `Your latest changes are still saving to the cloud. ${SIGN_OUT_NOTE}`
+                      : "Portfolio or journal changes from your last session haven't saved to the cloud. If you sign out now they won't reach your account; a backup copy stays on this device only. Reconnect and reopen the app to save them."}
                 </Text>
                 {(hasFailed || saving) && (
                   <TouchableOpacity

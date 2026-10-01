@@ -22,7 +22,12 @@ module.exports = defineConfig([
     rules: { 'react/no-unescaped-entities': 'off' },
   },
   {
-    // Build output and generated folders, never hand-written.
-    ignores: ['dist/*', 'web-build/*', '.expo/*', 'functions/lib/*', 'functions/node_modules/*'],
+    // Build output and generated folders, never hand-written. functions/ is
+    // the Firebase Cloud Functions package: it has its own package.json,
+    // node_modules and `tsc` build, deploys to Firebase (not Vercel), and its
+    // dependencies (firebase-functions, firebase-admin, stripe) aren't
+    // installed when the web app is built — linting it from here fails
+    // import/no-unresolved there. Lint or typecheck it from inside functions/.
+    ignores: ['dist/*', 'web-build/*', '.expo/*', 'functions/**'],
   },
 ]);

@@ -17,7 +17,7 @@ import { useTheme } from '../context/ThemeContext';
 import { changeColor } from '../utils/change';
 import { listAllUserProfiles, adminLoadPortfolio, adminLoadJournal } from '../services/firestoreSync';
 import { User, Portfolio } from '../types';
-import { partitionProfiles, fmtFixed, fmtMoney0, fmtDate, fmtReturn, countOrDash, IncompleteProfile } from '../services/adminProfiles';
+import { partitionProfiles, fmtFixed, fmtMoney0, fmtDate, fmtReturn, countOrDash, describeLoadError, IncompleteProfile } from '../services/adminProfiles';
 import { JournalEntry } from '../services/tradeJournalStore';
 import { sp, fs } from '../constants/responsive';
 import { tier1Lessons } from '../data/curriculum';
@@ -144,18 +144,42 @@ function StudentDetail({ student, onBack, theme }: { student: User; onBack: () =
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [journal, setJournal] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  // Each part fails on its own: a journal that can't load doesn't hide a
+  // portfolio that did (and vice versa). Before, one Promise.all with no catch:
+  // any failure left the spinner up forever with nothing shown.
+  const [portfolioError, setPortfolioError] = useState<string | null>(null);
+  const [journalError, setJournalError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);   // bumped by "Try again"
 
   useEffect(() => {
+    let cancelled = false;   // another student opened, or the screen closed, meanwhile
+    setLoading(true);
     (async () => {
-      const [p, j] = await Promise.all([
+      const [p, j] = await Promise.allSettled([
         adminLoadPortfolio(student.id),
         adminLoadJournal(student.id),
       ]);
-      setPortfolio(p);
-      setJournal(j);
+      if (cancelled) return;
+      if (p.status === 'fulfilled') { setPortfolio(p.value); setPortfolioError(null); }
+      else { console.error('[admin] portfolio load failed', p.reason); setPortfolio(null); setPortfolioError(describeLoadError(p.reason)); }
+      if (j.status === 'fulfilled') { setJournal(j.value); setJournalError(null); }
+      else { console.error('[admin] journal load failed', j.reason); setJournal([]); setJournalError(describeLoadError(j.reason)); }
       setLoading(false);
     })();
-  }, [student.id]);
+    return () => { cancelled = true; };
+  }, [student.id, attempt]);
+
+  /** The in-place failure state: what failed, why, and a way to retry. */
+  const failedCard = (label: string, what: string, reason: string) => (
+    <View style={[s.detailCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+      <Text style={[s.detailLabel, { color: theme.colors.textTertiary }]}>{label}</Text>
+      <Text style={[s.detailValue, { color: theme.colors.textSecondary }]}>Couldn't load this student's {what}.</Text>
+      <Text selectable style={[s.posLine, { color: theme.colors.textTertiary }]}>{reason}</Text>
+      <TouchableOpacity onPress={() => setAttempt(a => a + 1)} accessibilityRole="button" style={{ marginTop: sp(8) }}>
+        <Text style={{ color: theme.colors.primary, fontWeight: '700', fontSize: fs(13) }}>Try again</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   // A stored portfolio can be partial: read these defensively (adminProfiles).
   const positions = Array.isArray(portfolio?.positions) ? portfolio!.positions.filter(p => p && typeof p === 'object') : [];
@@ -213,7 +237,7 @@ function StudentDetail({ student, onBack, theme }: { student: User; onBack: () =
             )}
           </View>
 
-          {portfolio ? (
+          {portfolioError !== null ? failedCard('PORTFOLIO', 'portfolio', portfolioError) : portfolio ? (
             <View style={[s.detailCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
               <Text style={[s.detailLabel, { color: theme.colors.textTertiary }]}>PORTFOLIO</Text>
               <Text style={[s.bigValue, { color: theme.colors.textPrimary }]}>
@@ -237,6 +261,7 @@ function StudentDetail({ student, onBack, theme }: { student: User; onBack: () =
             </View>
           )}
 
+          {journalError !== null ? failedCard('JOURNAL (— entries)', 'journal', journalError) : (
           <View style={[s.detailCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
             <Text style={[s.detailLabel, { color: theme.colors.textTertiary }]}>JOURNAL ({journalList.length} entries)</Text>
             {journalList.length === 0
@@ -248,6 +273,7 @@ function StudentDetail({ student, onBack, theme }: { student: User; onBack: () =
                   </View>
                 ))}
           </View>
+          )}
         </ScrollView>
       )}
     </SafeAreaView>

@@ -85,3 +85,19 @@ export function fmtReturn(totalReturn: unknown, percent: unknown): string {
 export function countOrDash(v: unknown): number | '—' {
   return Array.isArray(v) ? v.length : '—';
 }
+
+/**
+ * A short, readable reason for a failed load, for the admin. Firestore errors
+ * carry a message like "Missing or insufficient permissions."; anything else
+ * falls back to its string form. Never throws and never returns empty.
+ */
+export function describeLoadError(e: unknown): string {
+  let msg = '';
+  try {
+    msg = typeof e === 'string' ? e
+      : e && typeof (e as { message?: unknown }).message === 'string' ? (e as { message: string }).message
+      : '';
+  } catch { /* an object whose message getter throws: treat as unknown */ }
+  const text = msg.trim() || 'Unknown error';
+  return text.length > 120 ? `${text.slice(0, 117)}…` : text;
+}

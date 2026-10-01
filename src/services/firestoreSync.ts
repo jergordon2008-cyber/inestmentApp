@@ -24,6 +24,7 @@ import { User, Portfolio } from '../types';
 import { JournalEntry } from './tradeJournalStore';
 import type { Classroom, ClassMember, Assignment, Announcement } from './classroomStore';
 import { isUsableProfile } from './profileReconcile';
+import type { ProfileDoc } from './adminProfiles';
 
 function db() {
   const d = getFirebaseDb();
@@ -174,11 +175,13 @@ export async function isAdmin(uid: string): Promise<boolean> {
 }
 
 /** Admin-only: list every student's profile. Security rules enforce the admin check server-side too. */
-export async function listAllUserProfiles(): Promise<User[]> {
+export async function listAllUserProfiles(): Promise<ProfileDoc[]> {
   const d = getFirebaseDb();
   if (!d) return [];
   const snap = await getDocs(collection(d, 'users'));
-  return snap.docs.map(doc => doc.data() as User);
+  // With the document id: the id field inside can be missing or another
+  // account's, and the admin screen has to tell those apart (adminProfiles).
+  return snap.docs.map(doc => ({ uid: doc.id, data: doc.data() as Partial<User> }));
 }
 
 export async function adminLoadPortfolio(uid: string): Promise<Portfolio | null> {

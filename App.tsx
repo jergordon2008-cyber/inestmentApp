@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Modal, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Modal, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { ThemeProvider, useTheme } from './src/context/ThemeContext';
@@ -20,6 +20,7 @@ import { initAnalyticsLifecycle, startNewSession, logScreenView, flushScreenBuff
 import { useTradeJournalStore, JournalEntry } from './src/services/tradeJournalStore';
 import { initializeLivePrices } from './src/services/stockDataService';
 import { TourGuide } from './src/components/TourGuide';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { reconcilePortfolio, savePortfolioBackups, ReconcileResult, isSameOwner } from './src/services/portfolioReconcile';
 import { reconcileJournal, saveJournalBackups, JournalReconcileResult } from './src/services/journalReconcile';
 import { requestSave, resetSync, setSyncAccount, loadUnsavedFlags, useSyncStatusStore, selectHasUnsaved } from './src/services/syncStatus';
@@ -115,6 +116,18 @@ import { AppFlowProvider } from './src/navigation/AppFlow';
 import { AuthActionsProvider, AuthActions } from './src/navigation/AuthFlow';
 import { navigationRef, navigate } from './src/navigation/navigationRef';
 import { linking } from './src/navigation/linking';
+
+/**
+ * Where the app restarts after the error boundary's "Back to Home". On web the
+ * navigator restarts from the URL, which still names the screen that crashed,
+ * so point it at Home first: the Learn tab when signed in, the start screen
+ * otherwise. (Native has no URL; it restarts at its default screen.)
+ */
+function pointAppAtHome() {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+  const { isAuthenticated, isOnboarded } = useUserStore.getState();
+  window.history.replaceState(null, '', isAuthenticated && isOnboarded ? '/learn' : '/');
+}
 
 function AppContent() {
   const { theme } = useTheme();
@@ -669,30 +682,32 @@ function AppContent() {
   return (
     <>
       <StatusBar style={theme.mode === 'dark' ? 'light' : 'dark'} />
-      <AuthActionsProvider value={authActions}>
-        <NavigationContainer
-          ref={navigationRef}
-          linking={linking}
-          onReady={logCurrentScreen}
-          onStateChange={logCurrentScreen}
-          fallback={<View style={{ flex: 1, backgroundColor: theme.colors.background }} />}
-        >
-          <AppFlowProvider uid={uid}>
-            <RootNavigator />
-          </AppFlowProvider>
-        </NavigationContainer>
-      </AuthActionsProvider>
+      <ErrorBoundary onGoHome={pointAppAtHome}>
+        <AuthActionsProvider value={authActions}>
+          <NavigationContainer
+            ref={navigationRef}
+            linking={linking}
+            onReady={logCurrentScreen}
+            onStateChange={logCurrentScreen}
+            fallback={<View style={{ flex: 1, backgroundColor: theme.colors.background }} />}
+          >
+            <AppFlowProvider uid={uid}>
+              <RootNavigator />
+            </AppFlowProvider>
+          </NavigationContainer>
+        </AuthActionsProvider>
 
-      <NamePromptModal
-        visible={needsNamePrompt}
-        onSubmit={(newName) => {
-          if (!uid || !user) return;
-          updateUser({ displayName: newName, hasCustomDisplayName: true });
-          requestSave('profile', uid, () => writeProfile(uid));
-          setNeedsNamePrompt(false);
-        }}
-      />
-      <TourGuide visible={showTour} onComplete={() => setShowTour(false)} />
+        <NamePromptModal
+          visible={needsNamePrompt}
+          onSubmit={(newName) => {
+            if (!uid || !user) return;
+            updateUser({ displayName: newName, hasCustomDisplayName: true });
+            requestSave('profile', uid, () => writeProfile(uid));
+            setNeedsNamePrompt(false);
+          }}
+        />
+        <TourGuide visible={showTour} onComplete={() => setShowTour(false)} />
+      </ErrorBoundary>
     </>
   );
 }

@@ -14,9 +14,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { changeColor, changeSign } from '../utils/change';
+import { changeColor } from '../utils/change';
 import { listAllUserProfiles, adminLoadPortfolio, adminLoadJournal } from '../services/firestoreSync';
 import { User, Portfolio } from '../types';
+import { partitionProfiles, fmtFixed, fmtMoney0, fmtDate, fmtReturn, countOrDash, IncompleteProfile } from '../services/adminProfiles';
 import { JournalEntry } from '../services/tradeJournalStore';
 import { sp, fs } from '../constants/responsive';
 import { tier1Lessons } from '../data/curriculum';
@@ -29,7 +30,10 @@ interface Props { onBack: () => void; onAnalyticsPress?: () => void; }
 
 export function AdminScreen({ onBack, onAnalyticsPress }: Props) {
   const { theme } = useTheme();
+  // Complete profiles show in full; incomplete ones (no onboarding, or a
+  // profile emptied to repair a copy) get a plain row — see adminProfiles.
   const [students, setStudents] = useState<User[]>([]);
+  const [incomplete, setIncomplete] = useState<IncompleteProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<User | null>(null);
@@ -37,9 +41,9 @@ export function AdminScreen({ onBack, onAnalyticsPress }: Props) {
   const load = async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true); else setLoading(true);
     try {
-      const all = await listAllUserProfiles();
-      all.sort((a, b) => (b.totalTradesExecuted ?? 0) - (a.totalTradesExecuted ?? 0));
-      setStudents(all);
+      const { complete, incomplete: partial } = partitionProfiles(await listAllUserProfiles());
+      setStudents(complete);
+      setIncomplete(partial);
     } catch (e) {
       console.warn('[admin] failed to load students', e);
     } finally {
@@ -72,6 +76,9 @@ export function AdminScreen({ onBack, onAnalyticsPress }: Props) {
 
       <Text style={[s.subtitle, { color: theme.colors.textSecondary }]}>
         {students.length} student{students.length === 1 ? '' : 's'} signed up
+        {incomplete.length > 0 && (
+          <Text style={{ color: theme.colors.warning }}>{` · ${incomplete.length} incomplete`}</Text>
+        )}
       </Text>
 
       {loading ? (
@@ -81,7 +88,7 @@ export function AdminScreen({ onBack, onAnalyticsPress }: Props) {
           contentContainerStyle={s.scroll}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={theme.colors.primary} />}
         >
-          {students.length === 0 && (
+          {students.length === 0 && incomplete.length === 0 && (
             <View style={s.empty}>
               <Ionicons name="people-outline" size={40} color={theme.colors.textTertiary} />
               <Text style={[s.emptyText, { color: theme.colors.textSecondary }]}>No students have signed up yet.</Text>
@@ -109,6 +116,24 @@ export function AdminScreen({ onBack, onAnalyticsPress }: Props) {
               <Ionicons name="chevron-forward" size={16} color={theme.colors.textTertiary} />
             </TouchableOpacity>
           ))}
+          {incomplete.map(p => (
+            // Not pressable: there's no profile to open.
+            <View
+              key={p.uid}
+              accessibilityLabel="Incomplete profile"
+              style={[s.row, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, opacity: 0.85 }]}
+            >
+              <View style={[s.avatar, { backgroundColor: theme.colors.textTertiary + '20' }]}>
+                <Ionicons name="person-outline" size={fs(18)} color={theme.colors.textTertiary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.name, { color: theme.colors.textSecondary }]}>
+                  Incomplete profile · hasn't finished onboarding
+                </Text>
+                <Text selectable style={[s.meta, { color: theme.colors.textTertiary }]}>Account id: {p.uid}</Text>
+              </View>
+            </View>
+          ))}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -132,6 +157,10 @@ function StudentDetail({ student, onBack, theme }: { student: User; onBack: () =
     })();
   }, [student.id]);
 
+  // A stored portfolio can be partial: read these defensively (adminProfiles).
+  const positions = Array.isArray(portfolio?.positions) ? portfolio!.positions.filter(p => p && typeof p === 'object') : [];
+  const journalList = Array.isArray(journal) ? journal : [];
+
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.colors.background }]}>
       <View style={[s.header, { borderBottomColor: theme.colors.border }]}>
@@ -150,7 +179,7 @@ function StudentDetail({ student, onBack, theme }: { student: User; onBack: () =
             <Text style={[s.detailLabel, { color: theme.colors.textTertiary }]}>EMAIL</Text>
             <Text style={[s.detailValue, { color: theme.colors.textPrimary }]}>{student.email}</Text>
             <Text style={[s.detailLabel, { color: theme.colors.textTertiary, marginTop: sp(12) }]}>JOINED</Text>
-            <Text style={[s.detailValue, { color: theme.colors.textPrimary }]}>{new Date(student.createdAt).toLocaleDateString()}</Text>
+            <Text style={[s.detailValue, { color: theme.colors.textPrimary }]}>{fmtDate(student.createdAt)}</Text>
           </View>
 
           <View style={[s.detailCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
@@ -188,17 +217,17 @@ function StudentDetail({ student, onBack, theme }: { student: User; onBack: () =
             <View style={[s.detailCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
               <Text style={[s.detailLabel, { color: theme.colors.textTertiary }]}>PORTFOLIO</Text>
               <Text style={[s.bigValue, { color: theme.colors.textPrimary }]}>
-                ${portfolio.totalValue.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                {fmtMoney0(portfolio.totalValue)}
               </Text>
               <Text style={{ color: changeColor(portfolio.totalReturn, theme), fontWeight: '700', marginBottom: sp(10) }}>
-                {changeSign(portfolio.totalReturn)}${portfolio.totalReturn.toFixed(2)} ({portfolio.totalReturnPercent.toFixed(2)}%)
+                {fmtReturn(portfolio.totalReturn, portfolio.totalReturnPercent)}
               </Text>
               <Text style={[s.detailValue, { color: theme.colors.textSecondary }]}>
-                {portfolio.positions.length} open position{portfolio.positions.length === 1 ? '' : 's'} · {portfolio.trades.length} total trades
+                {countOrDash(portfolio.positions)} open position{countOrDash(portfolio.positions) === 1 ? '' : 's'} · {countOrDash(portfolio.trades)} total trades
               </Text>
-              {portfolio.positions.map(p => (
-                <Text key={p.symbol} style={[s.posLine, { color: theme.colors.textTertiary }]}>
-                  {p.symbol} — {p.shares.toFixed(4)} sh @ ${p.averageCost.toFixed(2)}
+              {positions.map((p, i) => (
+                <Text key={`${p.symbol}-${i}`} style={[s.posLine, { color: theme.colors.textTertiary }]}>
+                  {p.symbol ?? '—'} — {fmtFixed(p.shares, 4)} sh @ ${fmtFixed(p.averageCost, 2)}
                 </Text>
               ))}
             </View>
@@ -209,13 +238,13 @@ function StudentDetail({ student, onBack, theme }: { student: User; onBack: () =
           )}
 
           <View style={[s.detailCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-            <Text style={[s.detailLabel, { color: theme.colors.textTertiary }]}>JOURNAL ({journal.length} entries)</Text>
-            {journal.length === 0
+            <Text style={[s.detailLabel, { color: theme.colors.textTertiary }]}>JOURNAL ({journalList.length} entries)</Text>
+            {journalList.length === 0
               ? <Text style={[s.detailValue, { color: theme.colors.textSecondary }]}>No journal entries yet.</Text>
-              : journal.slice(0, 10).map(e => (
+              : journalList.slice(0, 10).map(e => (
                   <View key={e.id} style={{ marginTop: sp(8) }}>
                     <Text style={[s.detailValue, { color: theme.colors.textPrimary }]}>{e.symbol} — {e.buyReason}</Text>
-                    <Text style={[s.posLine, { color: theme.colors.textTertiary }]}>{new Date(e.createdAt).toLocaleDateString()}</Text>
+                    <Text style={[s.posLine, { color: theme.colors.textTertiary }]}>{fmtDate(e.createdAt)}</Text>
                   </View>
                 ))}
           </View>

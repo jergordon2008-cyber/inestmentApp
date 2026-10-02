@@ -347,9 +347,14 @@ export const usePortfolioStore = create<PortfolioState>()(
         if (!portfolio) return;
 
         const now = new Date().toISOString();
+        let changed = false;
         const updatedPositions = portfolio.positions.map(position => {
           const newPrice = priceMap[position.symbol];
           if (newPrice === undefined) return position;
+          // Already marked at this price (value included — a sell can leave
+          // currentValue out of step with currentPrice): nothing to do.
+          if (newPrice === position.currentPrice && position.currentValue === position.shares * newPrice) return position;
+          changed = true;
 
           const currentValue = position.shares * newPrice;
           const unrealizedGain = currentValue - position.totalCost;
@@ -364,6 +369,9 @@ export const usePortfolioStore = create<PortfolioState>()(
             lastUpdatedAt: now,
           };
         });
+        // Nothing moved: keep the same object. A new one re-renders every
+        // subscriber and re-persists to AsyncStorage, every refresh (60s).
+        if (!changed) return;
 
         set({
           portfolio: withRecomputedTotals({

@@ -24,6 +24,9 @@ http://127.0.0.1:4000. Data is wiped when the emulators stop; re-run the seed.
 - Android emulator: set `EXPO_PUBLIC_FIREBASE_EMULATOR_HOST=10.0.2.2` in
   `.env.local`; a physical device needs your machine's LAN IP (and the
   emulators bound to it).
+- `npm run test:rules` runs the Firestore security-rules tests
+  (`tests/firestore-rules/`) on a throwaway emulator. If the emulators are
+  already running, use `npx jest --config jest.rules.config.js` instead.
 - Cloud Functions (Stripe checkout) are not emulated; those calls fail locally.
 - Never run `firebase deploy` from this setup — `npm run emulators` passes
   `--project demo-investiq` explicitly, but `.firebaserc` still defaults to

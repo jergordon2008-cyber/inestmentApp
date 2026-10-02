@@ -11,7 +11,8 @@
     "test": "jest",
     "lint": "eslint .",
     "emulators": "npx --yes firebase-tools@15.32.1 emulators:start --config firebase.emulators.json --project demo-investiq --only auth,firestore",
-    "emulators:seed": "node scripts/seed-emulators.js"
+    "emulators:seed": "node scripts/seed-emulators.js",
+    "test:rules": "npx --yes firebase-tools@15.32.1 emulators:exec --config firebase.emulators.json --project demo-investiq --only firestore \"jest --config jest.rules.config.js\""
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

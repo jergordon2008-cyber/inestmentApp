@@ -28,6 +28,28 @@ const ALL_LESSONS = [...tier1Lessons, ...tier2Lessons, ...tier3Lessons];
 
 interface Props { onBack: () => void; onAnalyticsPress?: () => void; }
 
+/**
+ * The in-place "couldn't load" state, shared by the student list and the
+ * student detail: the section stays on screen, says what failed and why, and
+ * offers "Try again" (the pattern the prediction card uses for an unavailable
+ * price). `note` is for extra context, e.g. that an older list is still shown.
+ */
+function LoadFailedCard({ label, message, reason, note, onRetry, theme }: {
+  label: string; message: string; reason: string; note?: string; onRetry: () => void; theme: any;
+}) {
+  return (
+    <View style={[s.detailCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+      <Text style={[s.detailLabel, { color: theme.colors.textTertiary }]}>{label}</Text>
+      <Text style={[s.detailValue, { color: theme.colors.textSecondary }]}>{message}</Text>
+      <Text selectable style={[s.posLine, { color: theme.colors.textTertiary }]}>{reason}</Text>
+      {note ? <Text style={[s.posLine, { color: theme.colors.textTertiary }]}>{note}</Text> : null}
+      <TouchableOpacity onPress={onRetry} accessibilityRole="button" style={{ marginTop: sp(8) }}>
+        <Text style={{ color: theme.colors.primary, fontWeight: '700', fontSize: fs(13) }}>Try again</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 export function AdminScreen({ onBack, onAnalyticsPress }: Props) {
   const { theme } = useTheme();
   // Complete profiles show in full; incomplete ones (no onboarding, or a
@@ -37,15 +59,22 @@ export function AdminScreen({ onBack, onAnalyticsPress }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<User | null>(null);
+  // Why the last load failed, or null. A failure used to leave the list empty
+  // and the screen saying "No students have signed up yet" — false: the fetch
+  // failed, the roster isn't known to be empty.
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true); else setLoading(true);
+    if (isRefresh) setRefreshing(true); else { setLoading(true); setLoadError(null); }
     try {
       const { complete, incomplete: partial } = partitionProfiles(await listAllUserProfiles());
       setStudents(complete);
       setIncomplete(partial);
+      setLoadError(null);
     } catch (e) {
-      console.warn('[admin] failed to load students', e);
+      // Keep whatever list is already on screen: older real data beats none.
+      console.error('[admin] failed to load students', e);
+      setLoadError(describeLoadError(e));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -57,6 +86,8 @@ export function AdminScreen({ onBack, onAnalyticsPress }: Props) {
   if (selected) {
     return <StudentDetail student={selected} onBack={() => setSelected(null)} theme={theme} />;
   }
+
+  const noListYet = students.length === 0 && incomplete.length === 0;
 
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.colors.background }]}>
@@ -75,7 +106,7 @@ export function AdminScreen({ onBack, onAnalyticsPress }: Props) {
       </View>
 
       <Text style={[s.subtitle, { color: theme.colors.textSecondary }]}>
-        {students.length} student{students.length === 1 ? '' : 's'} signed up
+        {loadError !== null && noListYet ? '— students signed up' : `${students.length} student${students.length === 1 ? '' : 's'} signed up`}
         {incomplete.length > 0 && (
           <Text style={{ color: theme.colors.warning }}>{` · ${incomplete.length} incomplete`}</Text>
         )}
@@ -88,7 +119,17 @@ export function AdminScreen({ onBack, onAnalyticsPress }: Props) {
           contentContainerStyle={s.scroll}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={theme.colors.primary} />}
         >
-          {students.length === 0 && incomplete.length === 0 && (
+          {loadError !== null && (
+            <LoadFailedCard
+              theme={theme}
+              label="STUDENTS"
+              message="Couldn't load the student list."
+              reason={loadError}
+              note={noListYet ? undefined : 'Showing the last list that loaded.'}
+              onRetry={() => load()}
+            />
+          )}
+          {loadError === null && noListYet && (
             <View style={s.empty}>
               <Ionicons name="people-outline" size={40} color={theme.colors.textTertiary} />
               <Text style={[s.emptyText, { color: theme.colors.textSecondary }]}>No students have signed up yet.</Text>
@@ -169,17 +210,6 @@ function StudentDetail({ student, onBack, theme }: { student: User; onBack: () =
     return () => { cancelled = true; };
   }, [student.id, attempt]);
 
-  /** The in-place failure state: what failed, why, and a way to retry. */
-  const failedCard = (label: string, what: string, reason: string) => (
-    <View style={[s.detailCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-      <Text style={[s.detailLabel, { color: theme.colors.textTertiary }]}>{label}</Text>
-      <Text style={[s.detailValue, { color: theme.colors.textSecondary }]}>Couldn't load this student's {what}.</Text>
-      <Text selectable style={[s.posLine, { color: theme.colors.textTertiary }]}>{reason}</Text>
-      <TouchableOpacity onPress={() => setAttempt(a => a + 1)} accessibilityRole="button" style={{ marginTop: sp(8) }}>
-        <Text style={{ color: theme.colors.primary, fontWeight: '700', fontSize: fs(13) }}>Try again</Text>
-      </TouchableOpacity>
-    </View>
-  );
 
   // A stored portfolio can be partial: read these defensively (adminProfiles).
   const positions = Array.isArray(portfolio?.positions) ? portfolio!.positions.filter(p => p && typeof p === 'object') : [];
@@ -237,7 +267,9 @@ function StudentDetail({ student, onBack, theme }: { student: User; onBack: () =
             )}
           </View>
 
-          {portfolioError !== null ? failedCard('PORTFOLIO', 'portfolio', portfolioError) : portfolio ? (
+          {portfolioError !== null ? (
+            <LoadFailedCard theme={theme} label="PORTFOLIO" message="Couldn't load this student's portfolio." reason={portfolioError} onRetry={() => setAttempt(a => a + 1)} />
+          ) : portfolio ? (
             <View style={[s.detailCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
               <Text style={[s.detailLabel, { color: theme.colors.textTertiary }]}>PORTFOLIO</Text>
               <Text style={[s.bigValue, { color: theme.colors.textPrimary }]}>
@@ -261,7 +293,9 @@ function StudentDetail({ student, onBack, theme }: { student: User; onBack: () =
             </View>
           )}
 
-          {journalError !== null ? failedCard('JOURNAL (— entries)', 'journal', journalError) : (
+          {journalError !== null ? (
+            <LoadFailedCard theme={theme} label="JOURNAL (— entries)" message="Couldn't load this student's journal." reason={journalError} onRetry={() => setAttempt(a => a + 1)} />
+          ) : (
           <View style={[s.detailCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
             <Text style={[s.detailLabel, { color: theme.colors.textTertiary }]}>JOURNAL ({journalList.length} entries)</Text>
             {journalList.length === 0

@@ -96,7 +96,7 @@ export async function generateTradeThesisStarter(
 
 /**
  * Conversational AI tutor — answers open-ended investing questions.
- * Used by aiTutorService. TutorChatScreen calls Anthropic directly.
+ * Used by AiTutorScreen.
  */
 export async function callClaudeForTutor(
   question: string,

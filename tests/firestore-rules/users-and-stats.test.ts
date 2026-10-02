@@ -191,31 +191,81 @@ describe('public_stats/{uid}', () => {
     await expectAllowed(setDoc(doc(dbAs(ALICE), 'public_stats', ALICE), stats(ALICE), { merge: true }));
   });
 
-  // ── S2 exploit: NOT fixed in this batch (follow-up). Documents current
-  // behaviour: the leaderboard (listLeaderboard, ordered by
-  // totalReturnPercent) trusts whatever the owner writes.
-  describe('KNOWN GAP S2: student can post fake leaderboard values', () => {
-    it('owner can set an impossible return and portfolio value', async () => {
+  // ── S2: public_stats backs the leaderboard and class board, so the owner
+  // may only publish the known fields, with the right types and realistic
+  // values. Short-term limits; server-calculated stats are the follow-up.
+  describe('S2: leaderboard values are limited', () => {
+    const full = (uid: string) => ({
+      ...stats(uid), predictionsWritten: 3, predictionsReviewed: 2, reviewedOnTime: 1,
+      earliestCheckBackAt: '2026-02-01T00:00:00.000Z',
+    });
+
+    it('the app\'s normal publish works: create, merge save, prediction counts', async () => {
+      const ref = doc(dbAs(ALICE), 'public_stats', ALICE);
+      await expectAllowed(setDoc(ref, stats(ALICE), { merge: true }));
+      await expectAllowed(setDoc(ref, { ...full(ALICE), totalValue: 104_250.5, totalReturnPercent: 4.2505, streak: 12, lessonsCompletedCount: 7 }, { merge: true }));
+      await expectAllowed(setDoc(ref, { ...full(ALICE), totalValue: 61_000, totalReturnPercent: -39 }, { merge: true }));
+    });
+
+    it('a student with no portfolio publishes nulls', async () => {
+      await expectAllowed(setDoc(doc(dbAs(ALICE), 'public_stats', ALICE),
+        { ...stats(ALICE), totalValue: null, totalReturnPercent: null, earliestCheckBackAt: null }, { merge: true }));
+    });
+
+    it('impossible return or portfolio value is refused', async () => {
       await seedDoc(`public_stats/${ALICE}`, stats(ALICE));
       const ref = doc(dbAs(ALICE), 'public_stats', ALICE);
-      await expectAllowed(updateDoc(ref, {
-        totalReturnPercent: 99999, totalValue: 1e12, lessonsCompletedCount: 9999, streak: 9999,
-      }));
-      expect((await getDoc(ref)).get('totalReturnPercent')).toBe(99999);
+      await expectDenied(updateDoc(ref, { totalReturnPercent: 99999 }));
+      await expectDenied(updateDoc(ref, { totalValue: 1e12 }));
+      await expectDenied(updateDoc(ref, { totalReturnPercent: -101 }));
+      await expectDenied(updateDoc(ref, { totalValue: -1 }));
+      await expectDenied(setDoc(ref, { ...stats(ALICE), totalReturnPercent: 99999 }, { merge: true }));
+      expect((await getDoc(ref)).get('totalReturnPercent')).toBe(0);
     });
 
-    it('owner can do the same through a merge save (the app\'s savePublicStats path)', async () => {
+    it('out-of-range counters are refused', async () => {
+      await seedDoc(`public_stats/${ALICE}`, stats(ALICE));
       const ref = doc(dbAs(ALICE), 'public_stats', ALICE);
-      await expectAllowed(setDoc(ref, { ...stats(ALICE), totalReturnPercent: 99999 }, { merge: true }));
-      expect((await getDoc(ref)).get('totalReturnPercent')).toBe(99999);
+      await expectDenied(updateDoc(ref, { lessonsCompletedCount: 9999 }));
+      await expectDenied(updateDoc(ref, { streak: 9999 }));
+      await expectDenied(updateDoc(ref, { streak: -1 }));
+      await expectDenied(updateDoc(ref, { currentTier: 4 }));
+      await expectDenied(updateDoc(ref, { currentTier: 0 }));
+      await expectDenied(updateDoc(ref, { predictionsWritten: 1, predictionsReviewed: 5, reviewedOnTime: 0 }));
+      await expectDenied(updateDoc(ref, { predictionsWritten: 5, predictionsReviewed: 2, reviewedOnTime: 3 }));
     });
 
-    it('owner can delete and re-create the doc, dropping prediction counts', async () => {
-      await seedDoc(`public_stats/${ALICE}`, { ...stats(ALICE), predictionsWritten: 2, predictionsReviewed: 1, reviewedOnTime: 1, earliestCheckBackAt: null });
+    it('wrong types are refused', async () => {
+      await seedDoc(`public_stats/${ALICE}`, stats(ALICE));
       const ref = doc(dbAs(ALICE), 'public_stats', ALICE);
-      await expectAllowed(deleteDoc(ref));
-      await expectAllowed(setDoc(ref, stats(ALICE)));
-      expect((await getDoc(ref)).get('predictionsWritten')).toBeUndefined();
+      await expectDenied(updateDoc(ref, { totalReturnPercent: '99999' }));
+      await expectDenied(updateDoc(ref, { streak: 1.5 }));
+      await expectDenied(updateDoc(ref, { displayName: 42 }));
+      await expectDenied(updateDoc(ref, { displayName: 'x'.repeat(61) }));
+      await expectDenied(updateDoc(ref, { displayName: '' }));
+      await expectDenied(updateDoc(ref, { earliestCheckBackAt: 5 }));
+    });
+
+    it('unknown fields are refused', async () => {
+      await expectDenied(setDoc(doc(dbAs(ALICE), 'public_stats', ALICE), { ...stats(ALICE), accuracy: 100 }));
+      await seedDoc(`public_stats/${ALICE}`, stats(ALICE));
+      await expectDenied(updateDoc(doc(dbAs(ALICE), 'public_stats', ALICE), { isTeacher: true }));
+    });
+
+    it('the doc must carry the owner\'s own uid', async () => {
+      await expectDenied(setDoc(doc(dbAs(ALICE), 'public_stats', ALICE), stats(BOB)));
+    });
+
+    it('owner cannot delete the doc (closes the delete + re-create bypass)', async () => {
+      await seedDoc(`public_stats/${ALICE}`, full(ALICE));
+      await expectDenied(deleteDoc(doc(dbAs(ALICE), 'public_stats', ALICE)));
+    });
+
+    // Residual until stats are server-calculated: values inside the limits
+    // are still self-reported.
+    it('known residual: a plausible but untrue value inside the limits is accepted', async () => {
+      await seedDoc(`public_stats/${ALICE}`, stats(ALICE));
+      await expectAllowed(updateDoc(doc(dbAs(ALICE), 'public_stats', ALICE), { totalReturnPercent: 250, totalValue: 350_000 }));
     });
   });
 });

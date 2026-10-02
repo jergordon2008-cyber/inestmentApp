@@ -14,10 +14,40 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
+    // Billing fields on users/{uid}. Only the Stripe functions write these
+    // (functions/src/index.ts, Admin SDK — not subject to these rules).
+    function billingFields() {
+      return ['subscription', 'subscriptionStatus', 'subscriptionPlan',
+              'subscriptionRenewsAt', 'subscriptionCancelAtPeriodEnd',
+              'subscriptionUpdatedAt', 'subscriptionExpiresAt', 'stripeCustomerId'];
+    }
+
+    // A doc (before or after a write) that carries no billing state beyond
+    // subscription 'free' or no subscription at all.
+    function hasNoBillingState(data) {
+      return !data.keys().hasAny(billingFields().removeAll(['subscription']))
+        && data.get('subscription', 'free') == 'free';
+    }
+
     // Full profile — private to the owner, readable by admin for the admin view.
+    //
+    // The owner can't set or change billing fields. The app saves the whole
+    // profile with merge, so a save that repeats the stored values unchanged
+    // is fine; only a write that changes one is refused. Two exceptions, both
+    // only ever to 'free': a new profile may carry subscription 'free' (what
+    // createNewUser sets), and so may a save onto a doc that has no
+    // subscription yet (an emptied profile being rebuilt by onboarding, or a
+    // profile older than the field). Delete is allowed only while the doc
+    // holds no billing state, so a student can't wipe their stripeCustomerId.
     match /users/{uid} {
       allow read: if isOwner(uid) || isAdmin();
-      allow write: if isOwner(uid);
+      allow create: if isOwner(uid) && hasNoBillingState(request.resource.data);
+      allow update: if isOwner(uid)
+        && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(billingFields().removeAll(['subscription']))
+        && (request.resource.data.get('subscription', null) == resource.data.get('subscription', null)
+            || (!('subscription' in resource.data) && request.resource.data.subscription == 'free'));
+      allow delete: if isOwner(uid) && hasNoBillingState(resource.data);
     }
 
     // Full portfolio incl. trade history — same privacy model.

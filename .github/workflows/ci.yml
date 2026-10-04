@@ -1,0 +1,61 @@
+# Checks every pull request (and every push to main): typecheck, lint, unit
+# tests, and the Firestore security-rules tests on a throwaway emulator.
+# Read-only: no secrets, no deploys. The rules tests run against the
+# demo-investiq emulator project only.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A new push to a PR cancels its older run; runs on main always finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # The Firestore emulator needs Java.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Cache Firebase emulators
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          # package.json pins the firebase-tools version (test:rules script).
+          key: firebase-emulators-${{ hashFiles('package.json') }}
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint .
+
+      - name: Unit tests
+        run: npx jest --ci
+
+      - name: Firestore rules tests
+        timeout-minutes: 10
+        run: npm run test:rules

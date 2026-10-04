@@ -96,7 +96,9 @@ function writePublicStats(forUid: string): Promise<void> {
   const activity = journal.ownerUid === forUid ? predictionActivity(journal.entries) : {};
   return savePublicStats(forUid, {
     ...activity,
-    displayName: user.displayName,
+    // firestore.rules accepts 1–60 characters here; neither the sign-up
+    // field nor the email-prefix fallback caps the name.
+    displayName: user.displayName.trim().slice(0, 60) || 'Investor',
     // No portfolio, no number: null, not a made-up $100,000 / 0%. Null, not
     // omitted: the save merges (an omitted field would keep an old number),
     // and the leaderboard query orders by totalReturnPercent, which drops

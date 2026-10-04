@@ -14,10 +14,40 @@ service cloud.firestore {
         exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
+    // Billing fields on users/{uid}. Only the Stripe functions write these
+    // (functions/src/index.ts, Admin SDK — not subject to these rules).
+    function billingFields() {
+      return ['subscription', 'subscriptionStatus', 'subscriptionPlan',
+              'subscriptionRenewsAt', 'subscriptionCancelAtPeriodEnd',
+              'subscriptionUpdatedAt', 'subscriptionExpiresAt', 'stripeCustomerId'];
+    }
+
+    // A doc (before or after a write) that carries no billing state beyond
+    // subscription 'free' or no subscription at all.
+    function hasNoBillingState(data) {
+      return !data.keys().hasAny(billingFields().removeAll(['subscription']))
+        && data.get('subscription', 'free') == 'free';
+    }
+
     // Full profile — private to the owner, readable by admin for the admin view.
+    //
+    // The owner can't set or change billing fields. The app saves the whole
+    // profile with merge, so a save that repeats the stored values unchanged
+    // is fine; only a write that changes one is refused. Two exceptions, both
+    // only ever to 'free': a new profile may carry subscription 'free' (what
+    // createNewUser sets), and so may a save onto a doc that has no
+    // subscription yet (an emptied profile being rebuilt by onboarding, or a
+    // profile older than the field). Delete is allowed only while the doc
+    // holds no billing state, so a student can't wipe their stripeCustomerId.
     match /users/{uid} {
       allow read: if isOwner(uid) || isAdmin();
-      allow write: if isOwner(uid);
+      allow create: if isOwner(uid) && hasNoBillingState(request.resource.data);
+      allow update: if isOwner(uid)
+        && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(billingFields().removeAll(['subscription']))
+        && (request.resource.data.get('subscription', null) == resource.data.get('subscription', null)
+            || (!('subscription' in resource.data) && request.resource.data.subscription == 'free'));
+      allow delete: if isOwner(uid) && hasNoBillingState(resource.data);
     }
 
     // Full portfolio incl. trade history — same privacy model.
@@ -50,10 +80,46 @@ service cloud.firestore {
           && (!('earliestCheckBackAt' in resource.data) || 'earliestCheckBackAt' in request.resource.data);
     }
 
+    // What a public_stats doc may hold (S2). The owner still reports these
+    // numbers, so the limits only stop impossible values: the paper
+    // portfolio starts at $100,000, so a value of $0–$10M is a return of
+    // −100% to +9,900%. Counts are whole numbers in a sane range, and the
+    // review counts can't exceed what they count. Follow-up: calculate these
+    // on the server (Cloud Function) and make the doc read-only to clients.
+    function isIntIn(v, lo, hi) {
+      return v is int && v >= lo && v <= hi;
+    }
+    function isNullOrNumberIn(v, lo, hi) {
+      return v == null || (v is number && v >= lo && v <= hi);
+    }
+    function isValidPublicStats(d, uid) {
+      return d.keys().hasOnly(['uid', 'displayName', 'totalValue', 'totalReturnPercent',
+                               'lessonsCompletedCount', 'streak', 'currentTier',
+                               'predictionsWritten', 'predictionsReviewed',
+                               'reviewedOnTime', 'earliestCheckBackAt', 'updatedAt'])
+        && d.uid == uid
+        && d.displayName is string && d.displayName.size() >= 1 && d.displayName.size() <= 60
+        && isNullOrNumberIn(d.get('totalValue', null), 0, 10000000)
+        && isNullOrNumberIn(d.get('totalReturnPercent', null), -100, 9900)
+        && isIntIn(d.get('lessonsCompletedCount', 0), 0, 200)
+        && isIntIn(d.get('streak', 0), 0, 3660)
+        && isIntIn(d.get('currentTier', 1), 1, 3)
+        && isIntIn(d.get('predictionsWritten', 0), 0, 10000)
+        && isIntIn(d.get('predictionsReviewed', 0), 0, d.get('predictionsWritten', 0))
+        && isIntIn(d.get('reviewedOnTime', 0), 0, d.get('predictionsReviewed', 0))
+        && (d.get('earliestCheckBackAt', null) == null
+            || (d.earliestCheckBackAt is string && d.earliestCheckBackAt.size() <= 40))
+        && (d.get('updatedAt', null) == null
+            || (d.updatedAt is string && d.updatedAt.size() <= 40));
+    }
+
     match /public_stats/{uid} {
       allow read: if isSignedIn();
-      allow create, delete: if isOwner(uid);
-      allow update: if isOwner(uid) && keepsPredictionCounts();
+      allow create: if isOwner(uid) && isValidPublicStats(request.resource.data, uid);
+      allow update: if isOwner(uid) && keepsPredictionCounts()
+        && isValidPublicStats(request.resource.data, uid);
+      // No client delete: delete + re-create would drop the prediction counts.
+      allow delete: if false;
     }
 
     // ── Classrooms ──────────────────────────────────────────────────────

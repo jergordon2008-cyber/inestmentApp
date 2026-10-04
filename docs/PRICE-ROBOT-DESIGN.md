@@ -1,6 +1,6 @@
 # Price robot: design (S6)
 
-**Status:** approved; licensing resolved. The Worker is built and tested (`workers/price-robot/`); the app switch comes next. Not deployed yet.
+**Status:** approved; licensing resolved. Worker and app switch are built and tested. Not deployed yet: Jeremiah deploys the Worker (§7), then ships the app.
 **Date:** 2026-10-04. Limits below were checked on this date (sources at the end).
 
 ## 0. Licensing: approved in writing
@@ -140,20 +140,25 @@ Firebase is unchanged (Spark plan); prices never go through Firestore.
 
 **Expected cost: $0.** There's no card on the Cloudflare account, so going over a limit can't create a charge. The Worker would return errors until the daily reset (UTC), and the app would fall back as in §5.
 
-## 5. App changes (next PR)
+## 5. App changes
 
-1. **New `priceRobotAdapter.ts`** replaces direct Finnhub calls.
+1. **New `priceRobotAdapter.ts`** replaces `finnhubAdapter.ts` (deleted).
    - Polls `/v1/prices` every 2 minutes while the app is open: one request for all tickers, instead of up to 110 Finnhub calls per device.
    - Stock detail and the trade re-quote use `/v1/quote/:SYM`.
-   - `EXPO_PUBLIC_PRICE_API_URL` is the Worker URL; it's not a secret.
+   - `EXPO_PUBLIC_PRICE_API_URL` is the Worker URL; it's not a secret. Without it the app runs on the January snapshot, labelled "Simulated prices".
+   - `stockDataService` stays the one in-memory store every screen reads from. Each price is tagged **live** (confirmed by the robot within the last 5 minutes) or **saved** (device storage, or not reconfirmed).
 2. **Never blank, never stuck on "Loading…":**
    - Screens render right away from the best price on the device.
    - Fetches time out after 5 s and never block the screen.
    - The last good prices are saved on the device, so the fallback order is live → saved → Jan 15 snapshot.
-3. **Label and credit:** "Prices as of 3:58 PM", "Closing prices · Oct 2", "Saved prices from 3:58 PM" or "Not live · Jan 15 snapshot". The credit **"Prices from Alpaca/Finnhub"** sits next to it, naming the source(s) actually shown.
-4. **Trade re-quote** keeps today's rule (no confirmed quote, no fill) and asks `/v1/quote`.
+   - Browse and the stock page open from the device's prices at once; the stock page no longer shows "Loading…".
+3. **Label and credit:** one small line under prices on Home, Portfolio, Browse, the stock page and the trade ticket:
+   - the shared label is "Prices as of 3:58 PM", "Closing prices · Oct 2", "Saved prices from Oct 2, 3:58 PM" or "Not live · Jan 15 snapshot";
+   - the stock page shows the stock's own label instead, e.g. "Price as of 3:58 PM · Alpaca" or "Closing price · Oct 2 · Finnhub";
+   - the credit **"Prices from Alpaca/Finnhub"** follows whenever robot prices are on screen.
+4. **Trade re-quote** keeps today's rule (no confirmed quote, no fill) and asks `/v1/quote`. Saved prices never fill a trade, mark a position or grade a prediction.
 5. **Remove `EXPO_PUBLIC_FINNHUB_KEY`** and every direct Finnhub call from the bundle.
-   - **Earnings signals** are turned off for now; they'd need their own robot endpoint.
+   - **Earnings signals** are turned off for now (`earningsData.ts` returns no quarters, so no signal shows); they'd need their own robot endpoint.
    - **Company news** is already hidden.
 6. Rename `SQ` → `XYZ`. Saved positions in `SQ` keep working through the alias.
 7. Only confirmed live prices are written into saved positions, which then feed the leaderboard (unchanged rule).
@@ -213,7 +218,9 @@ Outside market hours a run does nothing by design. `DEV_FORCE_OPEN=1 npm run dev
 | `http.ts` | Endpoints |
 | `symbols.ts` | The 110 tickers and the `SQ` alias |
 
-**Tests** (vitest, fake APIs; no keys, no network): 62 tests, covering:
+**App tests** (`priceRobotAdapter.test.ts`, 17 tests): live, saved and snapshot fallbacks; the 5-second timeout; saved prices never replacing live ones or reaching positions; on-demand quotes; labels; the `SQ` alias; the credit; a single poller. A web build with an old `EXPO_PUBLIC_FINNHUB_KEY` set was checked: no key and no `finnhub.io` in the bundle.
+
+**Worker tests** (vitest, fake APIs; no keys, no network): 62 tests, covering:
 - the merge rules: fresh, divergence, stale, Alpaca down, both down, refused keys;
 - full Finnhub coverage during an outage;
 - holiday, early close and daylight-saving changes;

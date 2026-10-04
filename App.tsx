@@ -18,7 +18,7 @@ import {
 } from './src/services/firestoreSync';
 import { initAnalyticsLifecycle, startNewSession, logScreenView, flushScreenBuffer } from './src/services/analyticsService';
 import { useTradeJournalStore, JournalEntry } from './src/services/tradeJournalStore';
-import { initializeLivePrices } from './src/services/stockDataService';
+import { startPriceRobot, stopPriceRobot } from './src/services/priceRobotAdapter';
 import { TourGuide } from './src/components/TourGuide';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { reconcilePortfolio, savePortfolioBackups, ReconcileResult, isSameOwner } from './src/services/portfolioReconcile';
@@ -501,7 +501,7 @@ function AppContent() {
 
   // Even without a new trade, resync public_stats (cheap, single small doc)
   // roughly every 5 minutes so the leaderboard reflects live price moves —
-  // matched to the same cadence as the Finnhub price refresh, not every tick.
+  // matched to the price refresh cadence, not every tick.
   // Depends on uid only: with user/portfolio as deps the 60s price refresh
   // (a new portfolio object) restarted it every minute, so it never fired.
   // The stores are read when the timer fires instead.
@@ -525,8 +525,9 @@ function AppContent() {
     requestSave('publicStats', uid, () => writePublicStats(uid));
   }, [uid, journalEntries, journalReadyFor, journalOwner]);
 
-  // Boot live price refresh from Finnhub (no-op if no API key set)
-  useEffect(() => { initializeLivePrices(); }, []);
+  // Prices from the price robot: saved prices at once, then the robot every
+  // 2 minutes (no-op without EXPO_PUBLIC_PRICE_API_URL).
+  useEffect(() => { startPriceRobot(); return stopPriceRobot; }, []);
 
   // Global portfolio price refresh — keeps HomeScreen balance live even when PortfolioScreen isn't open
   useEffect(() => {
@@ -537,8 +538,8 @@ function AppContent() {
       if (!current?.positions.length) return;
       const syms = current.positions.map(p => p.symbol);
       const stocks = await fetchStocks(syms);
-      // Only symbols that came back with a real quote. A rate-limited fetch
-      // returns the January snapshot price, and writing that into a saved
+      // Only symbols with a confirmed live price. When the robot can't be
+      // reached the store holds saved or January snapshot prices, and writing those into a saved
       // position fabricates a loss that syncs to Firestore and the
       // leaderboard. Omitted symbols keep their previous mark.
       updatePositionPrices(buildPositionPriceMap(stocks));

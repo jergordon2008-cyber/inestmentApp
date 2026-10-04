@@ -6,7 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { changeCaret, changeColor, changeSign, changeTone } from '../utils/change';
 import { useTheme } from '../context/ThemeContext';
 import { usePortfolioStore } from '../services/portfolioStore';
-import { fetchStock, getDataSourceLabel } from '../services/marketDataFacade';
+import { fetchStock, getDataSourceLabel, getStockSync } from '../services/marketDataFacade';
+import { PriceCredit } from '../components/PriceCredit';
 import { getSignalsForStock } from '../services/signalEngine';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { AnimatedPressable } from '../components/AnimatedPressable';
@@ -28,7 +29,9 @@ interface Props {
 export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Props) {
   const { theme } = useTheme();
   const portfolio = usePortfolioStore(s => s.portfolio);
-  const [stock, setStock] = useState<Stock | null>(null);
+  // Starts from the best price already on the device, so the page never
+  // waits on the network; the robot's answer replaces it when it lands.
+  const [stock, setStock] = useState<Stock | null>(() => getStockSync(symbol));
   const [signals, setSignals] = useState<Signal[]>([]);
   // The earnings signal needs a network call, so the Signals tab has a real
   // loading state rather than flashing "No signals" before the answer lands.
@@ -38,7 +41,10 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
 
   useEffect(() => {
     let cancelled = false;
-    fetchStock(symbol).then(setStock);
+    setStock(getStockSync(symbol));
+    fetchStock(symbol)
+      .then(fresh => { if (!cancelled && fresh) setStock(fresh); })
+      .catch(e => console.warn('[stockDetail] quote failed:', e));
     setSignalsLoading(true);
     getSignalsForStock(symbol)
       .then(result => { if (!cancelled) setSignals(result); })
@@ -55,7 +61,7 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
           <Text style={[s.back, { color: theme.colors.primary }]}>Back</Text>
         </TouchableOpacity>
       </View>
-      <Text style={[{ padding: 20, color: theme.colors.textSecondary }]}>Loading...</Text>
+      <Text style={[{ padding: 20, color: theme.colors.textSecondary }]}>This stock isn't available.</Text>
     </SafeAreaView>
   );
 
@@ -123,9 +129,7 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
             </View>
           </View>
 
-          <Text style={[s.mcapLabel, { color: theme.colors.textTertiary, marginTop: -8 }]}>
-            {getDataSourceLabel(stock)}
-          </Text>
+          <PriceCredit label={getDataSourceLabel(stock)} style={{ marginTop: -8 }} />
         </View>
 
         {/* Position Banner */}
@@ -172,8 +176,8 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
           <View style={s.statsGrid}>
             {/* Only fields the live quote actually supplies. P/E, EPS, Dividend,
                 Beta, 52W High/Low and Volume used to sit here rendering '—' on
-                every stock — Finnhub's free tier doesn't return them (see
-                finnhubAdapter), so the cards are gone rather than empty. */}
+                every stock — the price robot doesn't deliver them, so the
+                cards are gone rather than empty. */}
             {[
               { label: 'Day Range',      val: `$${stock.dayLow?.toFixed(2)} – $${stock.dayHigh?.toFixed(2)}` },
               { label: 'Previous Close', val: `$${stock.previousClose?.toFixed(2)}` },

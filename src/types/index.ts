@@ -143,7 +143,7 @@ export interface Stock {
   previousClose: number;
   change: number;                    // dollar change
   changePercent: number;             // percent change
-  volume?: number;                   // not available from Finnhub's free /quote endpoint
+  volume?: number;                   // not delivered by the price robot
   marketCap: number;
 
   // Fundamentals (for signal calculations)
@@ -157,8 +157,8 @@ export interface Stock {
    * When the fundamentals above were measured — deliberately separate from
    * lastUpdated, which is the PRICE timestamp.
    *
-   * The two drift apart: initializeLivePrices() refreshes price and previous
-   * close from Finnhub but never touches marketCap/peRatio/dividendYield/eps,
+   * The two drift apart: the price robot refreshes price and previous close
+   * but never touches marketCap/peRatio/dividendYield/eps,
    * so a Stock routinely carries a live price beside months-old fundamentals.
    * Anything rendering or reasoning over a fundamental must consult this, not
    * lastUpdated. Undefined means no fundamentals are attached (the live
@@ -169,7 +169,7 @@ export interface Stock {
   // Range
   dayLow: number;
   dayHigh: number;
-  yearLow?: number;                  // not available from Finnhub's free /quote endpoint
+  yearLow?: number;                  // not delivered by the price robot
   yearHigh?: number;
   
   // Meta
@@ -177,6 +177,16 @@ export interface Stock {
   logoUrl?: string;
   
   lastUpdated: string;
+
+  /** Which provider the live price came from (absent for the static snapshot). */
+  priceSource?: 'alpaca' | 'finnhub';
+  /**
+   * 'live': fetched from the price robot within the last few minutes, usable
+   * for trades and position marks. 'saved': a real price that hasn't been
+   * reconfirmed (device storage, or the robot unreachable), display only.
+   * Absent for the static snapshot.
+   */
+  priceOrigin?: 'live' | 'saved';
 }
 
 export interface PriceHistoryPoint {

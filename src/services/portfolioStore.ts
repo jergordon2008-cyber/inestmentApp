@@ -269,25 +269,32 @@ export const usePortfolioStore = create<PortfolioState>()(
 
         // Update portfolio state
         let newCash = portfolio.currentCash;
-        let newPositions = [...portfolio.positions];
+        const newPositions = [...portfolio.positions];
 
         if (type === 'buy') {
           newCash -= totalAmount;
 
-          const existingPosition = newPositions.find(p => p.symbol === symbol);
-          if (existingPosition) {
+          // Positions are replaced, never edited in place: newPositions is a
+          // shallow copy, so its objects are shared with the previous state.
+          const index = newPositions.findIndex(p => p.symbol === symbol);
+          if (index >= 0) {
             // Add to existing position
+            const existingPosition = newPositions[index];
             const newShares = existingPosition.shares + shares;
             const newTotalCost = existingPosition.totalCost + totalAmount;
-            const newAvgCost = newTotalCost / newShares;
-            existingPosition.shares = newShares;
-            existingPosition.totalCost = newTotalCost;
-            existingPosition.averageCost = newAvgCost;
-            existingPosition.currentPrice = pricePerShare;
-            existingPosition.currentValue = newShares * pricePerShare;
-            existingPosition.unrealizedGain = existingPosition.currentValue - newTotalCost;
-            existingPosition.unrealizedGainPercent = (existingPosition.unrealizedGain / newTotalCost) * 100;
-            existingPosition.lastUpdatedAt = now;
+            const currentValue = newShares * pricePerShare;
+            const unrealizedGain = currentValue - newTotalCost;
+            newPositions[index] = {
+              ...existingPosition,
+              shares: newShares,
+              totalCost: newTotalCost,
+              averageCost: newTotalCost / newShares,
+              currentPrice: pricePerShare,
+              currentValue,
+              unrealizedGain,
+              unrealizedGainPercent: (unrealizedGain / newTotalCost) * 100,
+              lastUpdatedAt: now,
+            };
           } else {
             // Create new position
             const newPosition: Position = {
@@ -312,20 +319,26 @@ export const usePortfolioStore = create<PortfolioState>()(
         } else {
           // Sell
           newCash += totalAmount;
-          const existingPosition = newPositions.find(p => p.symbol === symbol);
-          if (existingPosition) {
-            existingPosition.shares -= shares;
-            existingPosition.totalCost = existingPosition.shares * existingPosition.averageCost;
-            existingPosition.currentValue = existingPosition.shares * pricePerShare;
-            existingPosition.unrealizedGain = existingPosition.currentValue - existingPosition.totalCost;
-            existingPosition.unrealizedGainPercent = existingPosition.totalCost > 0
-              ? (existingPosition.unrealizedGain / existingPosition.totalCost) * 100
-              : 0;
-            existingPosition.lastUpdatedAt = now;
-
-            // Remove position if fully sold
-            if (existingPosition.shares <= 0) {
-              newPositions = newPositions.filter(p => p.id !== existingPosition.id);
+          const index = newPositions.findIndex(p => p.symbol === symbol);
+          if (index >= 0) {
+            const existingPosition = newPositions[index];
+            const remainingShares = existingPosition.shares - shares;
+            if (remainingShares <= 0) {
+              // Fully sold
+              newPositions.splice(index, 1);
+            } else {
+              const totalCost = remainingShares * existingPosition.averageCost;
+              const currentValue = remainingShares * pricePerShare;
+              const unrealizedGain = currentValue - totalCost;
+              newPositions[index] = {
+                ...existingPosition,
+                shares: remainingShares,
+                totalCost,
+                currentValue,
+                unrealizedGain,
+                unrealizedGainPercent: totalCost > 0 ? (unrealizedGain / totalCost) * 100 : 0,
+                lastUpdatedAt: now,
+              };
             }
           }
         }
@@ -347,9 +360,14 @@ export const usePortfolioStore = create<PortfolioState>()(
         if (!portfolio) return;
 
         const now = new Date().toISOString();
+        let changed = false;
         const updatedPositions = portfolio.positions.map(position => {
           const newPrice = priceMap[position.symbol];
           if (newPrice === undefined) return position;
+          // Already marked at this price (value included — a sell can leave
+          // currentValue out of step with currentPrice): nothing to do.
+          if (newPrice === position.currentPrice && position.currentValue === position.shares * newPrice) return position;
+          changed = true;
 
           const currentValue = position.shares * newPrice;
           const unrealizedGain = currentValue - position.totalCost;
@@ -364,6 +382,9 @@ export const usePortfolioStore = create<PortfolioState>()(
             lastUpdatedAt: now,
           };
         });
+        // Nothing moved: keep the same object. A new one re-renders every
+        // subscriber and re-persists to AsyncStorage, every refresh (60s).
+        if (!changed) return;
 
         set({
           portfolio: withRecomputedTotals({

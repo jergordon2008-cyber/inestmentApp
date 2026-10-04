@@ -502,13 +502,17 @@ function AppContent() {
   // Even without a new trade, resync public_stats (cheap, single small doc)
   // roughly every 5 minutes so the leaderboard reflects live price moves —
   // matched to the same cadence as the Finnhub price refresh, not every tick.
+  // Depends on uid only: with user/portfolio as deps the 60s price refresh
+  // (a new portfolio object) restarted it every minute, so it never fired.
+  // The stores are read when the timer fires instead.
   useEffect(() => {
-    if (!uid || !user || !portfolio) return;
+    if (!uid) return;
     const interval = setInterval(() => {
+      if (!useUserStore.getState().user || !usePortfolioStore.getState().portfolio) return;
       requestSave('publicStats', uid, () => writePublicStats(uid));
     }, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [uid, user, portfolio]);
+  }, [uid]);
 
   // Journal: same gating as the portfolio — nothing until this account's
   // device and cloud journals have been merged, never another user's.
@@ -527,8 +531,11 @@ function AppContent() {
   // Global portfolio price refresh — keeps HomeScreen balance live even when PortfolioScreen isn't open
   useEffect(() => {
     const refresh = async () => {
-      if (!portfolio?.positions.length) return;
-      const syms = portfolio.positions.map(p => p.symbol);
+      // Read the store on every run: this closure outlives the render it was
+      // created in, and the symbols held can change without the count changing.
+      const current = usePortfolioStore.getState().portfolio;
+      if (!current?.positions.length) return;
+      const syms = current.positions.map(p => p.symbol);
       const stocks = await fetchStocks(syms);
       // Only symbols that came back with a real quote. A rate-limited fetch
       // returns the January snapshot price, and writing that into a saved

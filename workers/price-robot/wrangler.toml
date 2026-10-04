@@ -1,0 +1,26 @@
+# Price robot: Cloudflare Worker (Free plan). See docs/PRICE-ROBOT-DESIGN.md.
+name = "price-robot"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+# Must match REFRESH_CRON / WATCHDOG_CRON in src/index.ts. Times are UTC:
+# 13:00–21:59 on weekdays covers 9:30–16:00 New York time in summer and
+# winter; each run checks the real trading calendar before calling anything.
+[triggers]
+crons = ["*/2 13-21 * * 1-5", "*/5 * * * *"]
+
+[[kv_namespaces]]
+binding = "PRICES"
+# Replace with the id printed by `npx wrangler kv namespace create PRICES`
+# before the first deploy. `wrangler dev` uses a local store and ignores it.
+id = "00000000000000000000000000000000"
+
+[vars]
+# Web origins allowed to read prices from a browser (comma-separated; "*"
+# matches one hostname label part, for Vercel preview URLs). localhost is
+# always allowed. Native apps send no Origin and aren't affected.
+ALLOWED_ORIGINS = ""
+
+# Secrets (never in this file): ALPACA_KEY_ID, ALPACA_SECRET_KEY, FINNHUB_KEY,
+# ALERT_URL. Set with `npx wrangler secret put <NAME>`.

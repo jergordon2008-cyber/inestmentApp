@@ -28,6 +28,8 @@ module.exports = defineConfig([
     // dependencies (firebase-functions, firebase-admin, stripe) aren't
     // installed when the web app is built — linting it from here fails
     // import/no-unresolved there. Lint or typecheck it from inside functions/.
-    ignores: ['dist/*', 'web-build/*', '.expo/*', 'functions/**'],
+    // workers/ is the same: Cloudflare Workers with their own package.json,
+    // typechecked and tested from inside each worker (see CI).
+    ignores: ['dist/*', 'web-build/*', '.expo/*', 'functions/**', 'workers/**'],
   },
 ]);

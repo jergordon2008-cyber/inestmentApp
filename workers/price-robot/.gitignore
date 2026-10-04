@@ -1,0 +1,4 @@
+node_modules/
+.wrangler/
+# Local secrets for `wrangler dev`, generated from the shell env by scripts/write-dev-vars.mjs.
+.dev.vars

@@ -6,6 +6,7 @@
     "**/*.tsx"
   ],
   "exclude": [
-    "functions"
+    "functions",
+    "workers"
   ]
 }

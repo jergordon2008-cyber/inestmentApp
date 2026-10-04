@@ -168,6 +168,17 @@ function normalize(c: Classroom): Classroom {
   return { ...c, announcements: [...c.announcements].sort((a, b) => b.postedAt.localeCompare(a.postedAt)) };
 }
 
+// Bumped whenever a create or join adds a class here, so a load that was
+// already in flight (and whose list may predate it) can't drop that class.
+let classAddedSeq = 0;
+
+// Which class is open, and whether this account teaches it (rules allow
+// teacher edits only for uids in teacherIds, so the controls follow that).
+function selection(c: Classroom | undefined, uid: string) {
+  const teaches = !!c && (c.teacherIds ?? []).includes(uid);
+  return { activeClassroomId: c?.id ?? null, isTeacher: teaches, myRole: (teaches ? 'teacher' : 'student') as UserRole };
+}
+
 export const useClassroomStore = create<ClassroomState>()(
   persist(
     (set, get) => ({
@@ -201,7 +212,8 @@ export const useClassroomStore = create<ClassroomState>()(
           const classroom: Classroom = { ...base, id: genId(), code: genCode() };
           try {
             await createClassroomWithCode(classroom, creator.uid);
-            set(s => ({ classrooms: [...s.classrooms, classroom], activeClassroomId: classroom.id, isTeacher: true }));
+            classAddedSeq++;
+            set(s => ({ classrooms: [...s.classrooms, classroom], ...selection(classroom, creator.uid) }));
             return classroom;
           } catch (e) {
             if (e instanceof ClassroomCodeTakenError && attempt < CREATE_CODE_ATTEMPTS - 1) continue;
@@ -215,7 +227,7 @@ export const useClassroomStore = create<ClassroomState>()(
         if (!CLASS_CODE_RE.test(normalized)) return null;
 
         const local = get().classrooms.find(c => c.code === normalized);
-        if (local) { set({ activeClassroomId: local.id }); return local; }
+        if (local) { set(selection(local, joiner.uid)); return local; }
 
         const classId = await lookupClassroomIdByCode(normalized);
         if (!classId) return null;
@@ -237,17 +249,33 @@ export const useClassroomStore = create<ClassroomState>()(
         if (!joined) return null;
 
         const hydrated = normalize(joined);
+        classAddedSeq++;
         set(s => ({
-          activeClassroomId: hydrated.id,
+          ...selection(hydrated, joiner.uid),
           classrooms: [...s.classrooms.filter(c => c.id !== hydrated.id), hydrated],
         }));
         return hydrated;
       },
 
+      // The cloud list is the truth: membership lives in the classroom doc
+      // (memberIds), so a student sees their class on any device without the
+      // code. The selection survives if it is still one of theirs; otherwise
+      // (new device, or a class left by another account on this device) it
+      // moves to their newest class, and teacher controls follow teacherIds.
+      // With no class at all the role flags are left alone: the landing
+      // buttons set them for the create/join form that may already be open.
       loadMyClassrooms: async (uid) => {
+        const seqAtStart = classAddedSeq;
         const mine = await listClassroomsForUser(uid);
         const pending = get().pendingOps.filter(op => op.uid === uid);
-        set({ classrooms: mine.map(normalize).map(c => withPendingOps(c, pending)) });
+        let classrooms = mine.map(normalize).map(c => withPendingOps(c, pending));
+        if (classAddedSeq !== seqAtStart) {
+          // A create/join finished meanwhile: keep the classes it added.
+          classrooms = [...classrooms, ...get().classrooms.filter(c => !classrooms.some(m => m.id === c.id))];
+        }
+        const active = classrooms.find(c => c.id === get().activeClassroomId)
+          ?? [...classrooms].sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))[0];
+        set(active ? { classrooms, ...selection(active, uid) } : { classrooms, activeClassroomId: null });
         get().resumePendingOps(uid);
       },
 

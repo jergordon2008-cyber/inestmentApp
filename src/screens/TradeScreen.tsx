@@ -9,6 +9,7 @@ import { useTheme } from '../context/ThemeContext';
 import { useUserStore } from '../services/userStore';
 import { usePortfolioStore } from '../services/portfolioStore';
 import { getStockSync, fetchStock, isLiveQuote, LIVE_DATA_ENABLED } from '../services/marketDataFacade';
+import { PriceCredit } from '../components/PriceCredit';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { TradeType, Trade } from '../types';
 import { BehaviorCoachModal, BehaviorBias } from '../components/BehaviorCoachModal';
@@ -151,9 +152,10 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
    * Confirm handler. Re-quotes before filling.
    *
    * The price on screen was captured when the screen opened and can be
-   * minutes old by the time the student taps — and if the app booted into a
-   * Finnhub rate limit it may be the January snapshot, which would be written
-   * into cost basis permanently. So: fetch fresh, then decide.
+   * minutes old by the time the student taps — and if the price robot
+   * couldn't be reached it may be a saved price or the January snapshot,
+   * which would be written into cost basis permanently. So: fetch fresh,
+   * then decide.
    *
    * Failure blocks rather than retrying or falling back. A wrong mark heals on
    * the next refresh; a wrong execution price never does. Blocking a paper
@@ -165,8 +167,8 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
     submitLock.current = true;
 
     try {
-      // No API key: the app is a deliberate simulation and snapshot prices
-      // are the intended marks. Nothing to re-quote against.
+      // No price robot configured: the app is a deliberate simulation and
+      // snapshot prices are the intended marks. Nothing to re-quote against.
       if (!LIVE_DATA_ENABLED) {
         await placeOrder(stock, price, shares);
         return;
@@ -176,9 +178,10 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
       setQuoteIssue(null);
       const fresh = await fetchStock(symbol);
 
-      // fetchStock never throws and never reports failure — on a rate limit
-      // it hands back the static snapshot. isLiveQuote is what distinguishes
-      // a real quote from that substitute.
+      // fetchStock never throws and never reports failure — if the robot
+      // can't be reached it hands back the saved or snapshot price.
+      // isLiveQuote accepts only a price confirmed by the robot within the
+      // last few minutes (CONFIRMED_FOR_MS).
       if (!fresh || !(fresh.price > 0) || !isLiveQuote(fresh)) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         setQuoteIssue({ kind: 'unavailable' });
@@ -265,6 +268,7 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
                 {Math.abs(stock.changePercent ?? 0).toFixed(2)}%
               </Text>
             </View>
+            <PriceCredit />
           </View>
         </View>
         <View style={{ width: 32 }} />

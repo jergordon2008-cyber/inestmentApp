@@ -1,14 +1,10 @@
 /**
  * Stock Data Service
  * 
- * Provides mock stock data for MVP. For production, this gets replaced with
- * real-time price feeds from APIs like:
- * - IEX Cloud ($9/mo for 50k API calls)
- * - Polygon.io ($29/mo for 100k API calls)
- * - Alpha Vantage (free tier 5 calls/min)
- * - Finnhub (free tier 60 calls/min)
- * 
- * For Tier 1, we ship with ~50 blue-chip stocks pre-loaded.
+ * The app's stock list (110 tickers) with a static January snapshot, plus
+ * the live prices the price robot delivers (see priceRobotAdapter.ts).
+ * Screens read prices from here: getStock() returns the latest live or saved
+ * price when there is one, and the snapshot otherwise.
  */
 
 import { Stock } from '../types';
@@ -16,8 +12,8 @@ import { Stock } from '../types';
 // Fixed snapshot date for this static dataset — NOT Date.now(). These prices
 // are a hand-authored snapshot, not a live feed; stamping them with the
 // current time on every read would falsely claim they were just fetched.
-// getStock() below overrides this with a real Finnhub timestamp whenever a
-// symbol has actually been live-refreshed (see initializeLivePrices).
+// getStock() below overrides this with the real trade time whenever the
+// price robot has delivered a price for the symbol (see applyLiveQuotes).
 export const STATIC_SNAPSHOT_DATE = '2026-01-15T00:00:00.000Z';
 
 /**
@@ -25,20 +21,18 @@ export const STATIC_SNAPSHOT_DATE = '2026-01-15T00:00:00.000Z';
  * static snapshot above.
  *
  * `lastUpdated` is the one field that reliably distinguishes the two: the
- * static rows carry STATIC_SNAPSHOT_DATE verbatim, while both live paths
- * (mapFinnhubToStock, and getStock() reading _lastLiveUpdate) stamp a real
- * Finnhub quote timestamp. Anything unparseable, or older than the snapshot
- * itself, is treated as not-live rather than trusted — a quote.t of 0 would
- * otherwise map to 1970 and read as a real, extremely old quote.
+ * static rows carry STATIC_SNAPSHOT_DATE verbatim, while a robot price
+ * carries its real trade time. Anything unparseable, or older than the
+ * snapshot itself, is treated as not-live rather than trusted.
  *
- * This answers "did a live quote land for THIS symbol", which is not the same
- * question as "is a Finnhub key configured". A key can be present while an
- * individual symbol falls back to the snapshot (rate limit, network error,
- * unknown ticker), which is exactly when a UI must not claim live data.
+ * Saved prices (loaded from the device after a restart, or a live price that
+ * hasn't been reconfirmed for CONFIRMED_FOR_MS) are real but may be old, so
+ * they don't count either: they're fine to display, never to fill a trade,
+ * mark a position or grade a prediction.
  *
  * Note this speaks only to price. P/E, EPS, dividend yield, market cap and the
- * 52-week range are never refreshed by initializeLivePrices, so on a Stock
- * from getStock() those stay January-static even when this returns true.
+ * 52-week range are never refreshed, so on a Stock from getStock() those stay
+ * January-static even when this returns true.
  */
 /**
  * One reporting quarter. Past this, a fundamental (P/E, EPS, dividend yield,
@@ -104,6 +98,7 @@ export function getSharesOutstanding(symbol: string): number {
 
 export function isLiveQuote(stock: Stock | null | undefined): boolean {
   if (!stock?.lastUpdated || stock.lastUpdated === STATIC_SNAPSHOT_DATE) return false;
+  if (stock.priceOrigin !== 'live') return false;
   const t = new Date(stock.lastUpdated).getTime();
   return Number.isFinite(t) && t > new Date(STATIC_SNAPSHOT_DATE).getTime();
 }
@@ -245,7 +240,7 @@ export const stockDatabase: Record<string, Stock> = {
 
   // ── FINTECH ───────────────────────────────────────────────────────────────
   COIN: { symbol:'COIN', name:'Coinbase Global Inc.', sector:'Financial Services', industry:'Crypto Exchange', price:218.40, previousClose:212.80, change:5.60, changePercent:2.63, volume:8_840_000, marketCap:55_000_000_000, peRatio:42.8, eps:5.10, beta:3.12, dayLow:213.60, dayHigh:221.40, yearLow:103.46, yearHigh:349.75, exchange:'NASDAQ', lastUpdated:STATIC_SNAPSHOT_DATE },
-  SQ:   { symbol:'SQ',   name:'Block Inc.', sector:'Financial Services', industry:'Digital Payments', price:68.40, previousClose:66.80, change:1.60, changePercent:2.40, volume:9_840_000, marketCap:43_000_000_000, peRatio:28.4, eps:2.41, beta:2.18, dayLow:67.00, dayHigh:69.60, yearLow:47.22, yearHigh:100.57, exchange:'NYSE', lastUpdated:STATIC_SNAPSHOT_DATE },
+  XYZ:  { symbol:'XYZ',  name:'Block Inc.', sector:'Financial Services', industry:'Digital Payments', price:68.40, previousClose:66.80, change:1.60, changePercent:2.40, volume:9_840_000, marketCap:43_000_000_000, peRatio:28.4, eps:2.41, beta:2.18, dayLow:67.00, dayHigh:69.60, yearLow:47.22, yearHigh:100.57, exchange:'NYSE', lastUpdated:STATIC_SNAPSHOT_DATE },
   HOOD: { symbol:'HOOD', name:'Robinhood Markets Inc.', sector:'Financial Services', industry:'Online Brokerage', price:24.80, previousClose:23.60, change:1.20, changePercent:5.08, volume:14_840_000, marketCap:22_000_000_000, peRatio:0, eps:-0.56, beta:2.04, dayLow:23.80, dayHigh:25.40, yearLow:9.74, yearHigh:63.80, exchange:'NASDAQ', lastUpdated:STATIC_SNAPSHOT_DATE },
   SOFI: { symbol:'SOFI', name:'SoFi Technologies Inc.', sector:'Financial Services', industry:'Digital Banking', price:12.40, previousClose:12.00, change:0.40, changePercent:3.33, volume:38_840_000, marketCap:12_000_000_000, peRatio:0, eps:-0.38, beta:1.84, dayLow:12.00, dayHigh:12.80, yearLow:6.01, yearHigh:17.39, exchange:'NASDAQ', lastUpdated:STATIC_SNAPSHOT_DATE },
   AFRM: { symbol:'AFRM', name:'Affirm Holdings Inc.', sector:'Financial Services', industry:'Buy Now Pay Later', price:38.40, previousClose:37.20, change:1.20, changePercent:3.23, volume:7_840_000, marketCap:12_000_000_000, peRatio:0, eps:-1.84, beta:2.88, dayLow:37.40, dayHigh:39.20, yearLow:21.39, yearHigh:62.30, exchange:'NASDAQ', lastUpdated:STATIC_SNAPSHOT_DATE },
@@ -292,62 +287,76 @@ export const stockDatabase: Record<string, Stock> = {
 };
 
 // ============================================================================
-// LIVE PRICE CACHE
-// Holds the last real Finnhub price per symbol. No fabricated movement here —
-// a symbol shows its static snapshot price until initializeLivePrices()
-// actually fetches a real quote, then holds that flat until the next real
-// 5-minute refresh. Previously this ticked every 30s with a random walk,
-// inventing intraday movement between real data points.
+// LIVE PRICES (from the price robot)
+// Holds the last real price per symbol. No fabricated movement: a symbol
+// shows its static snapshot price until the robot delivers a real one.
 // ============================================================================
 
-const _livePrices: Record<string, number> = {};
+/**
+ * Old tickers that may still be in saved portfolios. Block Inc. changed
+ * SQ → XYZ in January 2025; getStock('SQ') answers with XYZ's data under the
+ * SQ symbol, so a saved SQ position keeps its price.
+ */
+export const SYMBOL_ALIASES: Readonly<Record<string, string>> = { SQ: 'XYZ' };
 
-// ============================================================================
-// LIVE PRICE REFRESH (Finnhub)
-// When EXPO_PUBLIC_FINNHUB_KEY is set, fetches real market prices on startup
-// and every 5 minutes, overwriting simulated prices with actual data.
-// Without a key the simulation runs as normal.
-// ============================================================================
+function canonical(symbol: string): string {
+  const upper = symbol.toUpperCase();
+  return SYMBOL_ALIASES[upper] ?? upper;
+}
 
-let _liveRefreshInterval: ReturnType<typeof setInterval> | null = null;
+/**
+ * How long a price fetched from the robot counts as confirmed. Past this
+ * without a successful refresh it's shown as "saved", and isLiveQuote() stops
+ * accepting it for trades and position marks.
+ */
+export const CONFIRMED_FOR_MS = 5 * 60 * 1000;
 
-// Real Finnhub quote timestamp per symbol, set only when a background live
-// refresh actually succeeds — lets getStock() report a genuine "last live
-// update" time instead of always claiming the static snapshot is current.
-const _lastLiveUpdate: Record<string, string> = {};
+export interface LiveQuoteInput {
+  p: number;              // last trade price
+  pc: number | null;      // previous close
+  t: string;              // ISO trade time
+  src: 'alpaca' | 'finnhub';
+  hi?: number;
+  lo?: number;
+}
 
-export async function initializeLivePrices(): Promise<void> {
-  try {
-    const { LIVE_DATA_ENABLED, getLiveStocks } = require('./finnhubAdapter') as typeof import('./finnhubAdapter');
-    if (!LIVE_DATA_ENABLED) return; // no API key — simulation is fine
+interface LiveEntry extends LiveQuoteInput {
+  origin: 'live' | 'saved';
+  fetchedAt: number;
+}
 
-    // IMPORTANT: goes through getLiveStocks, which batches requests (10 at a
-    // time, 200ms apart) to respect Finnhub's free-tier rate limit. Calling
-    // getLiveStock() directly per-symbol here previously fired ~200+ requests
-    // simultaneously (112 symbols × 2 endpoints), instantly triggering 429s
-    // from a single page load — worse still with many students' browsers
-    // hitting the same API key at once.
-    const doRefresh = async () => {
-      const symbols = Object.keys(stockDatabase);
-      try {
-        const liveStocks = await getLiveStocks(symbols);
-        for (const live of liveStocks) {
-          if (live && live.price > 0 && stockDatabase[live.symbol]) {
-            _livePrices[live.symbol] = live.price;
-            stockDatabase[live.symbol].previousClose = live.previousClose;
-            _lastLiveUpdate[live.symbol] = live.lastUpdated;
-          }
-        }
-      } catch { /* silent fail — keep prior simulated/live prices */ }
-    };
+const _live: Record<string, LiveEntry> = {};
 
-    // Initial fetch on startup
-    await doRefresh();
+/**
+ * Stores prices from the robot. `origin` says where they came from: 'live'
+ * (fetched from the robot just now) or 'saved' (read back from the device).
+ * A saved price never replaces a live one, and an older trade never replaces
+ * a newer one.
+ */
+export function applyLiveQuotes(
+  quotes: Record<string, LiveQuoteInput>,
+  origin: 'live' | 'saved',
+  fetchedAt: number = Date.now(),
+): number {
+  let applied = 0;
+  for (const [rawSymbol, q] of Object.entries(quotes)) {
+    const sym = canonical(rawSymbol);
+    if (!stockDatabase[sym]) continue;
+    if (!q || !(q.p > 0) || !Number.isFinite(Date.parse(q.t))) continue;
+    const prev = _live[sym];
+    if (prev) {
+      if (origin === 'saved' && prev.origin === 'live') continue;
+      if (Date.parse(q.t) < Date.parse(prev.t)) continue;
+    }
+    _live[sym] = { ...q, origin, fetchedAt };
+    applied++;
+  }
+  return applied;
+}
 
-    // Refresh every 5 minutes
-    if (_liveRefreshInterval) clearInterval(_liveRefreshInterval);
-    _liveRefreshInterval = setInterval(doRefresh, 5 * 60 * 1000);
-  } catch { /* Finnhub adapter not available */ }
+/** Test helper: forget every live price. */
+export function resetLivePrices(): void {
+  for (const k of Object.keys(_live)) delete _live[k];
 }
 
 // ============================================================================
@@ -355,31 +364,43 @@ export async function initializeLivePrices(): Promise<void> {
 // ============================================================================
 
 export function getStock(symbol: string): Stock | null {
-  const base = stockDatabase[symbol.toUpperCase()];
+  const requested = symbol.toUpperCase();
+  const sym = canonical(requested);
+  const base = stockDatabase[sym];
   if (!base) return null;
 
-  const currentPrice = _livePrices[symbol.toUpperCase()] ?? base.price;
-  const change = currentPrice - base.previousClose;
-  const changePercent = (change / base.previousClose) * 100;
+  const live = _live[sym];
+  const currentPrice = live?.p ?? base.price;
+  const previousClose = live?.pc ?? base.previousClose;
+  const change = currentPrice - previousClose;
+  const changePercent = previousClose ? (change / previousClose) * 100 : 0;
 
-  return {
+  const stock: Stock = {
     ...base,
+    // An alias (SQ) keeps the symbol it was asked for, so a saved position
+    // under the old ticker still matches its price.
+    symbol: requested,
     price: Math.round(currentPrice * 100) / 100,
+    previousClose,
     change: Math.round(change * 100) / 100,
     changePercent: Math.round(changePercent * 100) / 100,
-    // Real Finnhub timestamp if this symbol's price has actually been
-    // live-refreshed; otherwise the honest static snapshot date — never
-    // Date.now(), which would claim a simulated price just came in live.
-    lastUpdated: _lastLiveUpdate[symbol.toUpperCase()] ?? base.lastUpdated,
+    // The real trade time when the robot has delivered a price; otherwise
+    // the honest static snapshot date — never Date.now(), which would claim
+    // a snapshot price just came in live.
+    lastUpdated: live?.t ?? base.lastUpdated,
     // The fundamentals spread in from `base` above (marketCap, peRatio, eps,
-    // dividendYield, beta, yearLow/High) are ALWAYS from the static snapshot:
-    // initializeLivePrices only writes price and previousClose, so no live
-    // fetch ever updates them. Stamp that vintage explicitly so callers can
-    // tell a live price from stale fundamentals on the same object. When
-    // fundamentals are eventually fetched for real, set this to the fetch
-    // time and everything gated on areFundamentalsStale() resumes on its own.
+    // dividendYield, beta, yearLow/High) are ALWAYS from the static snapshot.
+    // Stamp that vintage explicitly so callers can tell a live price from
+    // stale fundamentals on the same object.
     fundamentalsAsOf: base.fundamentalsAsOf ?? STATIC_SNAPSHOT_DATE,
   };
+  if (live) {
+    stock.priceSource = live.src;
+    stock.priceOrigin = live.origin === 'live' && Date.now() - live.fetchedAt <= CONFIRMED_FOR_MS ? 'live' : 'saved';
+    if (live.hi !== undefined) stock.dayHigh = live.hi;
+    if (live.lo !== undefined) stock.dayLow = live.lo;
+  }
+  return stock;
 }
 
 export function getAllStocks(): Stock[] {

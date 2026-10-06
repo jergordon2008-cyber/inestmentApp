@@ -58,7 +58,7 @@ You need Node 22 and a checkout of the repo at the commit to deploy. About 15 mi
    - **Right away:** `curl https://price-robot.<your-subdomain>.workers.dev/v1/health`. Before the first run it says `"ok":false` with no prices; that's expected.
    - **During market hours:** within 2 minutes, `/v1/health` should show `"ok":true` and `/v1/prices` about 110 quotes.
    - `npx wrangler tail` shows each run's summary live: calls made, sources used, KV write.
-8. **Give the URL to the app:** set `EXPO_PUBLIC_PRICE_API_URL` to it in Vercel (production) and EAS when the app PR ships.
+8. **Give the URL to the app:** when the app PR ships, set `EXPO_PUBLIC_PRICE_API_URL` to it in Vercel (production), delete `EXPO_PUBLIC_FINNHUB_KEY`, and redeploy.
 
 **Afterwards:**
 - **Logs:** dashboard → Workers & Pages → price-robot → Logs, or `npx wrangler tail`.

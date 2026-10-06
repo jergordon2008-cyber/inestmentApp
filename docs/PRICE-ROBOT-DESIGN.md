@@ -163,26 +163,21 @@ Firebase is unchanged (Spark plan); prices never go through Firestore.
 6. Rename `SQ` → `XYZ`. Saved positions in `SQ` keep working through the alias.
 7. Only confirmed live prices are written into saved positions, which then feed the leaderboard (unchanged rule).
 
-## 6. Old app versions after the old key is rotated
+## 6. The old version after the old key is rotated
 
-The old production key is **already refused by Finnhub (403)**, so rotating it changes nothing students see today:
-- **Prices:** old builds show the Jan 15 snapshot.
-- **Saved positions:** keep their last real mark.
-- **Trading:** old builds can't trade ("price unavailable"), as today.
+Production is the Vercel web app only; there's no phone app. The old production key is **already refused by Finnhub (403)**, so rotating it changes nothing students see today. Until the new version is deployed, the old one keeps:
+- **Prices:** the Jan 15 snapshot.
+- **Saved positions:** their last real mark.
+- **Trading:** blocked ("price unavailable"), as today.
 
-How each platform gets the new version:
-
-| Platform | How |
-|---|---|
-| **Web** | Next Vercel production deploy. |
-| **iOS / Android** | `expo-updates` is configured (`runtimeVersion: appVersion`) and this change is JavaScript only, so an **EAS Update** reaches installed apps on their next launch or two, with no store review. |
+Students get the new version with the next Vercel production deploy: reloading the page loads it. A tab left open on the old version keeps the old behaviour until it's reloaded.
 
 Rotation still matters: the old key is public in every old bundle.
 
 ## 7. Setup and deploy
 
 Deploy steps for Jeremiah are in `workers/price-robot/README.md`. In short:
-1. Create an API token from the **"Edit Cloudflare Workers"** template, limited to his account, with a 30-day expiry.
+1. Log in with `npx wrangler login` (browser login; nothing to share).
 2. Create the KV namespace.
 3. Set the four secrets and `ALLOWED_ORIGINS`.
 4. Deploy, then check `/v1/health`.
@@ -198,11 +193,13 @@ curl http://127.0.0.1:8787/v1/prices
 ```
 Outside market hours a run does nothing by design. `DEV_FORCE_OPEN=1 npm run dev` treats the market as open, for local testing only; never set it on the deployed Worker.
 
-**App release (Jeremiah):**
+**App release (Jeremiah; production is the Vercel web app only):**
 1. Merge the app PR.
-2. Set `EXPO_PUBLIC_PRICE_API_URL` in Vercel production and EAS, and **delete `EXPO_PUBLIC_FINNHUB_KEY`** from both.
-3. Redeploy web and publish an EAS Update.
-4. Rotate the old Finnhub key.
+2. Vercel → production project → Settings → Environment Variables:
+   - add `EXPO_PUBLIC_PRICE_API_URL` = the Worker URL (no trailing slash);
+   - **delete `EXPO_PUBLIC_FINNHUB_KEY`**.
+3. **Redeploy** production: env vars are baked in at build time.
+4. Rotate the old Finnhub key in the Finnhub dashboard.
 
 ## 8. Code and tests
 

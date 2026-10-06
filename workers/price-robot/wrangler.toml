@@ -12,15 +12,15 @@ crons = ["*/2 13-21 * * 1-5", "*/5 * * * *"]
 
 [[kv_namespaces]]
 binding = "PRICES"
-# Replace with the id printed by `npx wrangler kv namespace create PRICES`
-# before the first deploy. `wrangler dev` uses a local store and ignores it.
-id = "00000000000000000000000000000000"
+# Created with `npx wrangler kv namespace create PRICES` on the production
+# Cloudflare account. `wrangler dev` uses a local store and ignores it.
+id = "fb90b84df3984689bcf657762decfc77"
 
 [vars]
 # Web origins allowed to read prices from a browser (comma-separated; "*"
 # matches one hostname label part, for Vercel preview URLs). localhost is
 # always allowed. Native apps send no Origin and aren't affected.
-ALLOWED_ORIGINS = ""
+ALLOWED_ORIGINS = "https://investiq-web-blond.vercel.app,https://investmentapp-*-malik-c31f.vercel.app"
 
 # Secrets (never in this file): ALPACA_KEY_ID, ALPACA_SECRET_KEY, FINNHUB_KEY,
 # ALERT_URL. Set with `npx wrangler secret put <NAME>`.

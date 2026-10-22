@@ -7,9 +7,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { changeColor, changeSign } from '../utils/change';
 import { useClassroomStore, Classroom, Assignment, ClassMember, usePendingClassroomIds } from '../services/classroomStore';
-import { reportError, useSyncStatusStore } from '../services/syncStatus';
+import { useSyncStatusStore } from '../services/syncStatus';
 import { SyncBanner } from '../components/SyncBanner';
 import { useUserStore } from '../services/userStore';
+import { reportError } from '../services/syncStatus';
 import { classReviewsOpen, ON_TIME_DAYS } from '../services/predictionGrading';
 
 interface Props {

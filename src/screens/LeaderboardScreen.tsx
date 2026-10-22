@@ -20,6 +20,7 @@ import { useTheme } from '../context/ThemeContext';
 import { changeColor, changeSign } from '../utils/change';
 import { useUserStore } from '../services/userStore';
 import { listLeaderboard, PublicStats } from '../services/firestoreSync';
+import { publicDisplayName } from '../utils/publicName';
 
 interface LeaderboardScreenProps {
   onBack: () => void;
@@ -139,13 +140,14 @@ function LeaderboardRow({ entry, rank, isCurrentUser, theme }: {
 
       <View style={[styles.avatar, { backgroundColor: isCurrentUser ? theme.colors.primary : theme.colors.surfaceMuted }]}>
         <Text style={[styles.avatarInitial, { color: isCurrentUser ? '#FFFFFF' : theme.colors.textSecondary }]}>
-          {entry.displayName.charAt(0).toUpperCase()}
+          {publicDisplayName(entry.displayName).charAt(0)}
         </Text>
       </View>
 
       <View style={styles.nameCol}>
         <Text style={[styles.displayName, { color: theme.colors.textPrimary, fontWeight: isCurrentUser ? '700' : '500' }]} numberOfLines={1}>
-          {isCurrentUser ? 'You' : entry.displayName}
+          {/* Shortened on display too, for docs saved before names were shortened. */}
+          {isCurrentUser ? 'You' : publicDisplayName(entry.displayName)}
         </Text>
         <Text style={[styles.tierLabel, { color: theme.colors.textTertiary }]}>Tier {entry.currentTier}</Text>
       </View>

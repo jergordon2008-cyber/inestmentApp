@@ -23,6 +23,7 @@ import {
   listClassroomsForUser, listLeaderboard,
 } from './firestoreSync';
 import { requestSave, useSyncStatusStore } from './syncStatus';
+import { publicDisplayName } from '../utils/publicName';
 
 export type UserRole = 'student' | 'teacher';
 
@@ -238,7 +239,8 @@ export const useClassroomStore = create<ClassroomState>()(
         // genuine denial (surfaces as "Code not found").
         try {
           await addClassroomMember(classId, {
-            id: joiner.uid, name: joiner.name, role: 'student', email: joiner.email, joinedAt: new Date().toISOString(),
+            // Every member can read the roster: first name + last initial only.
+            id: joiner.uid, name: publicDisplayName(joiner.name), role: 'student', email: joiner.email, joinedAt: new Date().toISOString(),
           });
         } catch (e) {
           if (!isPermissionDenied(e)) throw e;

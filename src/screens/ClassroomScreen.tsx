@@ -11,6 +11,7 @@ import { useClassroomStore, Classroom, Assignment, ClassMember, usePendingClassr
 import { useSyncStatusStore } from '../services/syncStatus';
 import { SyncBanner } from '../components/SyncBanner';
 import { useUserStore } from '../services/userStore';
+import { publicDisplayName } from '../utils/publicName';
 import { classReviewsOpen, ON_TIME_DAYS } from '../services/predictionGrading';
 
 interface Props {
@@ -244,10 +245,12 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                         </Text>
                       )}
                       <View style={[s.avatar, { backgroundColor: theme.colors.primary + '20' }]}>
-                        <Text style={[s.avatarText, { color: theme.colors.primary }]}>{m.name.charAt(0).toUpperCase()}</Text>
+                        <Text style={[s.avatarText, { color: theme.colors.primary }]}>{publicDisplayName(m.name).charAt(0)}</Text>
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={[s.studentName, { color: theme.colors.textPrimary }]}>{m.name}</Text>
+                        {/* Shortened on display too: rosters written before names were
+                            shortened at join still hold full names. */}
+                        <Text style={[s.studentName, { color: theme.colors.textPrimary }]}>{publicDisplayName(m.name)}</Text>
                         {/* portfolioValue/portfolioReturn are only ever written together, by
                             refreshMembers() pulling this member's public_stats doc — a student
                             who joined but never triggered a public_stats sync has both undefined

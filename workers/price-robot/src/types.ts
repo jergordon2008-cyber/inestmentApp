@@ -43,8 +43,18 @@ export interface Env {
   FINNHUB_KEY: string;
   /** ntfy.sh topic URL or Discord webhook URL. Optional: without it alerts only go to the log. */
   ALERT_URL?: string;
-  /** Comma-separated web origins allowed to read prices from a browser. */
+  /**
+   * Comma-separated web origins allowed to read prices. /v1/prices and
+   * /v1/quote/* answer 403 to any other Origin, and to requests with none.
+   */
   ALLOWED_ORIGINS?: string;
+  /**
+   * Local development only ("1"): also accept http://localhost and
+   * http://127.0.0.1 origins. Set only in the git-ignored .dev.vars by
+   * `npm run dev`; never in wrangler.toml or on the deployed Worker. It also
+   * takes effect only when the Worker itself is reached at localhost.
+   */
+  DEV_ALLOW_LOCALHOST?: string;
   /** Local testing only ("1"): treat the market as open at any hour. Never set in production. */
   DEV_FORCE_OPEN?: string;
 }

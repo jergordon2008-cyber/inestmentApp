@@ -1,13 +1,19 @@
 /**
- * The app-facing API. Read-only and public by design: prices aren't secret,
- * and the API keys never leave the Worker.
+ * The app-facing API. Read-only; the API keys never leave the Worker.
  *
  *   GET /v1/prices       every ticker, from KV, cached 30 s
  *   GET /v1/quote/:sym   one ticker; refetched from Alpaca if > 4 min old, cached 15 s
  *   GET /v1/health       age and source counts; 503 when stale in session
  *
- * CORS only lets the app's own web origins read from a browser. Native apps
- * send no Origin, so this limits other websites, not access in general.
+ * /v1/prices and /v1/quote/* answer 403 unless the request's Origin header is
+ * one of ALLOWED_ORIGINS (so a request with no Origin, e.g. curl or a browser
+ * tab opened on the URL, is refused too). The check runs before anything is
+ * read, cached or fetched upstream. /v1/health stays open.
+ *
+ * What this is and isn't: browsers always send Origin and a web page can't
+ * change it, so other websites can't use the API, and a link to it opens
+ * nothing. A script outside a browser can still send any Origin it likes, so
+ * this is not authentication and does not stop deliberate scraping.
  */
 import { fetchAlpacaSnapshots } from './alpaca';
 import { defaultSession, etNow, phaseAt, type Session } from './calendar';
@@ -22,15 +28,28 @@ export const ON_DEMAND_AFTER_MS = 4 * 60_000;
 const PRICES_MAX_AGE = 30;
 const QUOTE_MAX_AGE = 15;
 
-export function originAllowed(origin: string, allowed: string | undefined): boolean {
-  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+const LOCAL_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1']);
+
+/**
+ * Local development only. Needs DEV_ALLOW_LOCALHOST=1 AND the Worker itself
+ * being reached at localhost, which only `wrangler dev` does: a deployed
+ * Worker is reached at *.workers.dev, so a stray DEV_ALLOW_LOCALHOST there
+ * would still allow nothing.
+ */
+function localhostAllowed(req: Request, env: Env): boolean {
+  return env.DEV_ALLOW_LOCALHOST === '1' && LOCAL_HOSTS.has(new URL(req.url).hostname);
+}
+
+export function originAllowed(origin: string, allowed: string | undefined, allowLocalhost = false): boolean {
+  if (allowLocalhost && LOCAL_ORIGIN.test(origin)) return true;
   for (const raw of (allowed ?? '').split(',')) {
     const pattern = raw.trim();
     if (!pattern) continue;
     if (pattern === origin) return true;
     if (pattern.includes('*')) {
       // "*" matches one run of letters, digits and dashes inside a hostname,
-      // e.g. https://<project>-*-<team>.vercel.app for Vercel preview URLs.
+      // e.g. https://investmentapp-*-malik-c31f.vercel.app for preview URLs.
       const re = new RegExp('^' + pattern.split('*').map(p => p.replace(/[.+?^${}()|[\]\\/]/g, '\\$&')).join('[a-z0-9-]*') + '$');
       if (re.test(origin)) return true;
     }
@@ -42,7 +61,7 @@ function withCors(res: Response, req: Request, env: Env): Response {
   const origin = req.headers.get('Origin');
   const headers = new Headers(res.headers);
   headers.append('Vary', 'Origin');
-  if (origin && originAllowed(origin, env.ALLOWED_ORIGINS)) {
+  if (origin && originAllowed(origin, env.ALLOWED_ORIGINS, localhostAllowed(req, env))) {
     headers.set('Access-Control-Allow-Origin', origin);
     headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
     headers.set('Access-Control-Max-Age', '86400');
@@ -57,22 +76,44 @@ function json(body: unknown, status: number, maxAge: number): Response {
   });
 }
 
-/** What the app sees: quotes and status, without the robot's bookkeeping. */
+/**
+ * 403 for a request that isn't from an allowed site. No CORS headers (the
+ * browser reports it as blocked), no caching, and nothing has been read from
+ * KV or fetched from Alpaca by the time this is returned.
+ */
+function refuseUnlessAllowedOrigin(req: Request, env: Env): Response | null {
+  const origin = req.headers.get('Origin');
+  if (origin && originAllowed(origin, env.ALLOWED_ORIGINS, localhostAllowed(req, env))) return null;
+  return new Response(JSON.stringify({ error: 'origin not allowed' }), {
+    status: 403,
+    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
+}
+
+/**
+ * The fields the app reads from a quote (priceRobotAdapter + stockDataService:
+ * price, previous close, trade time, source, day high/low). An allow-list on
+ * purpose: a field added to Quote later is not served until it is added here.
+ */
+export type PublicQuote = Pick<Quote, 'p' | 'pc' | 't' | 'src' | 'hi' | 'lo'>;
+
+function publicQuote(q: Quote): PublicQuote {
+  const out: PublicQuote = { p: q.p, pc: q.pc, t: q.t, src: q.src };
+  if (q.hi !== undefined) out.hi = q.hi;
+  if (q.lo !== undefined) out.lo = q.lo;
+  return out;
+}
+
+/**
+ * What /v1/prices serves: only what the app reads (v, asOf, market and each
+ * quote's PublicQuote fields). Not served: the robot's bookkeeping (chk,
+ * retry, auth errors), the stale flag, and the session/final/alpacaOk status,
+ * none of which the app uses; /v1/health has the status.
+ */
 export function publicView(blob: PriceBlob) {
-  const quotes: Record<string, Omit<Quote, 'chk' | 'chkAt'>> = {};
-  for (const [sym, q] of Object.entries(blob.quotes)) {
-    const { chk: _chk, chkAt: _chkAt, ...rest } = q;
-    quotes[sym] = rest;
-  }
-  return {
-    v: blob.v,
-    asOf: blob.asOf,
-    market: blob.market,
-    final: blob.final,
-    session: blob.session ? { date: blob.session.date } : null,
-    alpacaOk: blob.alpacaOk,
-    quotes,
-  };
+  const quotes: Record<string, PublicQuote> = {};
+  for (const [sym, q] of Object.entries(blob.quotes)) quotes[sym] = publicQuote(q);
+  return { v: blob.v, asOf: blob.asOf, market: blob.market, quotes };
 }
 
 function edgeCache(): Cache | null {
@@ -128,6 +169,8 @@ export async function handleRequest(req: Request, env: Env, deps: Deps, ctx?: Ex
   const path = new URL(req.url).pathname.replace(/\/+$/, '');
 
   if (path === '/v1/prices') {
+    const refused = refuseUnlessAllowedOrigin(req, env);
+    if (refused) return refused;
     const res = await cached('v1/prices', PRICES_MAX_AGE, deps.now(), async () => {
       const blob = await readBlob(env.PRICES, PRICES_MAX_AGE);
       return blob ? json(publicView(blob), 200, PRICES_MAX_AGE) : json({ error: 'no prices yet' }, 503, 0);
@@ -137,6 +180,8 @@ export async function handleRequest(req: Request, env: Env, deps: Deps, ctx?: Ex
 
   const quoteMatch = /^\/v1\/quote\/([A-Za-z.]{1,10})$/.exec(path);
   if (quoteMatch) {
+    const refused = refuseUnlessAllowedOrigin(req, env);
+    if (refused) return refused;
     const sym = resolveSymbol(quoteMatch[1]!);
     if (!sym) return withCors(json({ error: 'unknown symbol' }, 404, 300), req, env);
     const res = await cached(`v1/quote/${sym}`, QUOTE_MAX_AGE, deps.now(), () => quoteResponse(sym, env, deps), ctx);

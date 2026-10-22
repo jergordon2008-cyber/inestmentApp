@@ -16,8 +16,10 @@ npm test              # unit tests with fake APIs (no keys, no network)
 npm run typecheck
 npm run dev           # .dev.vars from your shell env (ALPACA_KEY_ID, ALPACA_SECRET_KEY, FINNHUB_KEY), then wrangler dev
 curl "http://127.0.0.1:8787/__scheduled?cron=*/2+13-21+*+*+1-5"   # run one refresh
-curl http://127.0.0.1:8787/v1/prices
+curl -H "Origin: http://localhost:8081" http://127.0.0.1:8787/v1/prices
 ```
+`/v1/prices` and `/v1/quote/*` answer 403 to a request without an allowed `Origin`, so curl needs the header. `npm run dev` writes `DEV_ALLOW_LOCALHOST=1` into `.dev.vars`, which allows `http://localhost` / `http://127.0.0.1` origins in local development only; it is never in `wrangler.toml`, and it has no effect on the deployed Worker. To run the app locally against the local Worker, set `EXPO_PUBLIC_PRICE_API_URL=http://127.0.0.1:8787`; the deployed Worker will not answer a localhost page.
+
 Outside market hours a refresh does nothing by design. `DEV_FORCE_OPEN=1 npm run dev` treats the market as open, for local testing only; never set it on the deployed Worker. `.dev.vars` is git-ignored; delete it when done.
 
 ## Deploy (Jeremiah, on his Cloudflare account)
@@ -38,9 +40,9 @@ You need Node 22 and a checkout of the repo at the commit to deploy. About 15 mi
    ```
 4. **Set the allowed web origins** in `wrangler.toml` under `[vars]`:
    ```toml
-   ALLOWED_ORIGINS = "https://<production web domain>,https://<project>-*-<team>.vercel.app"
+   ALLOWED_ORIGINS = "https://<production web domain>,https://investmentapp-*-malik-c31f.vercel.app"
    ```
-   `*` matches one hostname part, which covers Vercel preview URLs; list every web deployment that should show prices. Native apps aren't affected.
+   `*` matches one hostname part, which covers Vercel preview URLs. Only these sites can read `/v1/prices` and `/v1/quote/*`: any other site, and any request with no `Origin` (curl, a browser tab opened on the URL), gets 403. `/v1/health` stays open. `localhost` is not allowed on the deployed Worker. This is not authentication: a script that sends an allowed `Origin` header still gets through, and a native app (no `Origin`) would be refused too.
 5. **Set the secrets.** Each command prompts for the value; nothing is written to disk or shell history.
    ```sh
    npx wrangler secret put ALPACA_KEY_ID
@@ -56,7 +58,8 @@ You need Node 22 and a checkout of the repo at the commit to deploy. About 15 mi
    It prints the URL, e.g. `https://price-robot.<your-subdomain>.workers.dev`.
 7. **Check it.**
    - **Right away:** `curl https://price-robot.<your-subdomain>.workers.dev/v1/health`. Before the first run it says `"ok":false` with no prices; that's expected.
-   - **During market hours:** within 2 minutes, `/v1/health` should show `"ok":true` and `/v1/prices` about 110 quotes.
+   - **During market hours:** within 2 minutes, `/v1/health` should show `"ok":true` and `/v1/prices` about 110 quotes. `/v1/prices` needs an allowed origin: `curl -H "Origin: https://<production web domain>" https://price-robot.<your-subdomain>.workers.dev/v1/prices`. Without the header it answers 403, which is expected.
+   - **Daily request count:** Cloudflare counts every request to the Worker, refused ones included. Dashboard → Workers & Pages → price-robot → Metrics (up to three months back). The Free plan allows 100,000 a day.
    - `npx wrangler tail` shows each run's summary live: calls made, sources used, KV write.
 8. **Give the URL to the app:** when the app PR ships, set `EXPO_PUBLIC_PRICE_API_URL` to it in Vercel (production), delete `EXPO_PUBLIC_FINNHUB_KEY`, and redeploy.
 

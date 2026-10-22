@@ -14,6 +14,7 @@ import { CompanyLogo } from '../components/CompanyLogo';
 import { PortfolioPieChart } from '../components/PortfolioPieChart';
 import { Position } from '../types';
 import { changeCaret, changeColor, changeSign } from '../utils/change';
+import { allocationSplit } from '../utils/allocation';
 import { SyncBanner } from '../components/SyncBanner';
 
 interface Props {
@@ -86,7 +87,7 @@ export function PortfolioScreen({ onBack, onStockPress, onBrowsePress, embedded,
   const totalReturn    = portfolio.totalReturn ?? 0;
   const perf           = changeColor(totalReturn, theme);
   const investedValue  = portfolio.totalValue - portfolio.currentCash;
-  const cashPct        = (portfolio.currentCash / portfolio.totalValue) * 100;
+  const allocation     = allocationSplit(portfolio.currentCash, portfolio.totalValue);
 
   return (
     <Wrapper style={[s.container, !embedded && { backgroundColor: theme.colors.background }]}>
@@ -156,20 +157,20 @@ export function PortfolioScreen({ onBack, onStockPress, onBrowsePress, embedded,
             <View style={[s.allocMiniTrack, { backgroundColor: theme.colors.border }]}>
               <View style={[s.allocMiniInvested, {
                 backgroundColor: theme.colors.primary,
-                width: `${100 - cashPct}%`,
+                width: `${allocation.investedPct}%`,
               }]} />
             </View>
             <View style={s.allocLegend}>
               <View style={s.legendItem}>
                 <View style={[s.legendDot, { backgroundColor: theme.colors.primary }]} />
                 <Text style={[s.legendText, { color: theme.colors.textTertiary }]}>
-                  Invested {(100 - cashPct).toFixed(0)}%
+                  Invested {allocation.investedLabel}
                 </Text>
               </View>
               <View style={s.legendItem}>
                 <View style={[s.legendDot, { backgroundColor: theme.colors.textTertiary }]} />
                 <Text style={[s.legendText, { color: theme.colors.textTertiary }]}>
-                  Cash {cashPct.toFixed(0)}%
+                  Cash {allocation.cashLabel}
                 </Text>
               </View>
             </View>

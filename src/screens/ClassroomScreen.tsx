@@ -11,8 +11,8 @@ import { useClassroomStore, Classroom, Assignment, ClassMember, usePendingClassr
 import { useSyncStatusStore } from '../services/syncStatus';
 import { SyncBanner } from '../components/SyncBanner';
 import { useUserStore } from '../services/userStore';
-import { publicDisplayName } from '../utils/publicName';
 import { classReviewsOpen, ON_TIME_DAYS } from '../services/predictionGrading';
+import { publicDisplayName } from '../utils/publicName';
 
 interface Props {
   onBack: () => void;

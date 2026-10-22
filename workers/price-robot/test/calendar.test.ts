@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultSession, etNow, fetchSession, formatEt, phaseAt } from '../src/calendar';
-import { ALPACA_CAL, calendarRoute, fakeFetch, jsonRes } from './helpers';
-
-const keys = { ALPACA_KEY_ID: 'k', ALPACA_SECRET_KEY: 's' };
+import { fakeFetch, FINNHUB_HOLIDAYS, holidaysRoute, jsonRes } from './helpers';
 
 describe('New York time', () => {
   it('handles daylight saving (EDT in October, EST in November)', () => {
@@ -18,7 +16,7 @@ describe('New York time', () => {
 });
 
 describe('phases', () => {
-  const regular = { date: '2026-10-07', open: 570, close: 960, source: 'alpaca' as const };
+  const regular = { date: '2026-10-07', open: 570, close: 960, source: 'finnhub' as const };
   it('is open from a minute before the open until the close', () => {
     expect(phaseAt(568, regular)).toBe('closed');
     expect(phaseAt(569, regular)).toBe('open');
@@ -30,27 +28,40 @@ describe('phases', () => {
     expect(phaseAt(967, regular)).toBe('closed');
   });
   it('honors early closes', () => {
-    const early = { date: '2026-11-27', open: 570, close: 780, source: 'alpaca' as const };
+    const early = { date: '2026-11-27', open: 570, close: 780, source: 'finnhub' as const };
     expect(phaseAt(800, early)).toBe('closed');
     expect(phaseAt(780, early)).toBe('after-close');
   });
   it('is closed all day on a holiday or weekend', () => {
-    expect(phaseAt(700, { date: '2026-11-26', open: null, close: null, source: 'alpaca' })).toBe('closed');
+    expect(phaseAt(700, { date: '2026-11-26', open: null, close: null, source: 'finnhub' })).toBe('closed');
     expect(defaultSession(etNow(new Date('2026-10-10T15:00:00Z'))).open).toBeNull(); // Saturday
   });
 });
 
-describe('Alpaca calendar', () => {
-  it('reads a regular day', async () => {
-    const f = fakeFetch({ [ALPACA_CAL]: calendarRoute() });
-    expect(await fetchSession('2026-10-07', keys, f.fn)).toEqual({ date: '2026-10-07', open: 570, close: 960, source: 'alpaca' });
+describe('Finnhub holiday calendar', () => {
+  const f = () => fakeFetch({ [FINNHUB_HOLIDAYS]: holidaysRoute() });
+  it('reads a regular day (not on the list)', async () => {
+    expect(await fetchSession('2026-10-07', 'k', f().fn)).toEqual({ date: '2026-10-07', open: 570, close: 960, source: 'finnhub' });
   });
-  it('treats an empty answer as a holiday', async () => {
-    const f = fakeFetch({ [ALPACA_CAL]: calendarRoute('09:30', '16:00', true) });
-    expect(await fetchSession('2026-11-26', keys, f.fn)).toMatchObject({ open: null, close: null });
+  it('a listed day with no trading hours is a holiday', async () => {
+    expect(await fetchSession('2026-11-26', 'k', f().fn)).toMatchObject({ open: null, close: null });
+  });
+  it('a listed day with hours is an early close', async () => {
+    expect(await fetchSession('2026-11-27', 'k', f().fn)).toMatchObject({ open: 570, close: 780 });
+    expect(await fetchSession('2026-12-24', 'k', f().fn)).toMatchObject({ open: 570, close: 780 });
+  });
+  it('weekends are closed', async () => {
+    expect(await fetchSession('2026-10-10', 'k', f().fn)).toMatchObject({ open: null });
+  });
+  it('sends the key in a header', async () => {
+    let header: string | null = null;
+    const g = fakeFetch({ [FINNHUB_HOLIDAYS]: (_u, init) => { header = new Headers(init?.headers).get('X-Finnhub-Token'); return holidaysRoute()(_u, init); } });
+    await fetchSession('2026-10-07', 'secret-key', g.fn);
+    expect(header).toBe('secret-key');
+    expect(g.calls[0]).not.toContain('secret-key');
   });
   it('returns null on errors so the caller can fall back', async () => {
-    const f = fakeFetch({ [ALPACA_CAL]: () => jsonRes({ message: 'nope' }, 500) });
-    expect(await fetchSession('2026-10-07', keys, f.fn)).toBeNull();
+    expect(await fetchSession('2026-10-07', 'k', fakeFetch({ [FINNHUB_HOLIDAYS]: () => jsonRes({ error: 'x' }, 500) }).fn)).toBeNull();
+    expect(await fetchSession('2026-10-07', 'k', fakeFetch({ [FINNHUB_HOLIDAYS]: () => jsonRes({ nope: 1 }) }).fn)).toBeNull();
   });
 });

@@ -1,27 +1,32 @@
 /**
  * US market hours, in New York time.
  *
- * The cron runs every 2 minutes from 13:00 to 21:59 UTC on weekdays, which
+ * The cron runs every minute from 13:00 to 21:59 UTC on weekdays, which
  * covers 9:30–16:00 ET in both EDT and EST. Each run asks this module whether
- * the market is actually open: holidays and early closes come from Alpaca's
- * trading calendar (fetched once per day and kept in the price blob), so
- * nights, weekends and holidays make no data calls.
+ * the market is actually open: holidays and early closes come from Finnhub's
+ * market-holiday list (fetched once per day and kept in the price blob), so
+ * nights, weekends and holidays make no price calls.
  */
-import { ALPACA_TRADING_BASE, alpacaHeaders, type AlpacaKeys } from './alpaca';
+import { FINNHUB_BASE } from './finnhub';
 
 /** One trading day. open/close are minutes after midnight ET; null = closed all day. */
 export interface Session {
   date: string;           // YYYY-MM-DD, New York date
   open: number | null;
   close: number | null;
-  source: 'alpaca' | 'default';
+  /** 'alpaca' only in blobs written before the switch to Finnhub. */
+  source: 'finnhub' | 'alpaca' | 'default';
 }
 
 export type Phase = 'closed' | 'open' | 'after-close';
 
 /** Refresh starts one minute before the open. */
 export const PRE_OPEN_MIN = 1;
-/** Runs this many minutes after the close may take the closing snapshot. */
+/**
+ * Runs this many minutes after the close take the closing snapshot. At 45
+ * tickers a run it takes 3 runs to cover all 110; the rest is slack for a
+ * late or failed run.
+ */
 export const AFTER_CLOSE_MIN = 6;
 
 const ET = new Intl.DateTimeFormat('en-US', {
@@ -56,29 +61,33 @@ export function defaultSession(et: EtTime): Session {
   return { date: et.date, open: weekday ? 570 : null, close: weekday ? 960 : null, source: 'default' };
 }
 
+interface FinnhubHoliday { atDate?: string; tradingHour?: string }
+
 /**
- * Alpaca's calendar for one date. An empty answer means the market is closed
- * that day (holiday). Returns null on any failure so the caller can fall back.
+ * Today's session from Finnhub's US market-holiday list (one call; the list
+ * covers this year and next). A date on the list with no trading hours is a
+ * holiday; one with "09:30-13:00" is an early close; any other weekday has
+ * regular hours. Returns null on any failure so the caller can fall back.
  */
-export async function fetchSession(
-  date: string,
-  keys: AlpacaKeys,
-  fetchFn: typeof fetch,
-): Promise<Session | null> {
+export async function fetchSession(date: string, key: string, fetchFn: typeof fetch): Promise<Session | null> {
   try {
-    const res = await fetchFn(`${ALPACA_TRADING_BASE}/v2/calendar?start=${date}&end=${date}`, {
-      headers: alpacaHeaders(keys),
+    const res = await fetchFn(`${FINNHUB_BASE}/stock/market-holiday?exchange=US`, {
+      headers: { 'X-Finnhub-Token': key },
       signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return null;
-    const body: unknown = await res.json();
-    if (!Array.isArray(body)) return null;
-    const day = body.find((d: { date?: string }) => d?.date === date) as { open?: string; close?: string } | undefined;
-    if (!day) return { date, open: null, close: null, source: 'alpaca' };
-    const open = parseHhmm(day.open ?? '');
-    const close = parseHhmm(day.close ?? '');
+    const body = (await res.json()) as { data?: unknown };
+    if (!Array.isArray(body?.data)) return null;
+    const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
+    if (weekday === 0 || weekday === 6) return { date, open: null, close: null, source: 'finnhub' };
+    const day = (body.data as FinnhubHoliday[]).find(d => d?.atDate === date);
+    if (!day) return { date, open: 570, close: 960, source: 'finnhub' };
+    const m = /^(\d{1,2}:\d{2})-(\d{1,2}:\d{2})$/.exec((day.tradingHour ?? '').trim());
+    if (!m) return { date, open: null, close: null, source: 'finnhub' };
+    const open = parseHhmm(m[1]!);
+    const close = parseHhmm(m[2]!);
     if (open === null || close === null) return null;
-    return { date, open, close, source: 'alpaca' };
+    return { date, open, close, source: 'finnhub' };
   } catch {
     return null;
   }

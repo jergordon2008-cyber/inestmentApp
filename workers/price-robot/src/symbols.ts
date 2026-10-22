@@ -1,7 +1,7 @@
 /**
  * The tickers the robot refreshes: exactly the app's stock list
  * (`stockDatabase` in src/services/stockDataService.ts). Students can't open
- * or trade anything else, so one Alpaca batch covers every holding.
+ * or trade anything else, so the rotation covers every holding.
  * test/symbols.test.ts fails if this list and the app's drift apart.
  *
  * Plain TypeScript with no Worker types, so the app's tests can import it too.
@@ -29,7 +29,7 @@ export const ALIASES: Readonly<Record<string, string>> = { SQ: 'XYZ' };
 
 /**
  * Tier 1's approved list (TIER_1_APPROVED_SYMBOLS in portfolioStore.ts).
- * When Alpaca is down these get Finnhub quotes first.
+ * Never-confirmed tickers are fetched in this order first (after a deploy).
  */
 export const TIER1: readonly string[] = [
   'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'NVDA', 'TSLA',

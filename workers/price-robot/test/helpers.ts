@@ -1,3 +1,4 @@
+import { refresh } from '../src/refresh';
 import { SYMBOLS } from '../src/symbols';
 import type { Deps, Env } from '../src/types';
 
@@ -42,9 +43,11 @@ export function fakeFetch(routes: Record<string, Handler>) {
   return { fn, calls };
 }
 
+// Alpaca: only for the disabled adapter's own tests (test/alpaca.test.ts).
 export const ALPACA_SNAP = 'https://data.alpaca.markets/v2/stocks/snapshots';
 export const ALPACA_CAL = 'https://paper-api.alpaca.markets/v2/calendar';
 export const FINNHUB = 'https://finnhub.io/api/v1/quote';
+export const FINNHUB_HOLIDAYS = 'https://finnhub.io/api/v1/stock/market-holiday';
 
 export function jsonRes(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -69,6 +72,20 @@ export function finnhubBody(price: number, tradeTime: string) {
   return { c: price, pc: price - 2, h: price + 1, l: price - 1, t: Math.floor(Date.parse(tradeTime) / 1000) };
 }
 
+/** Finnhub's US holiday list, shaped like the real answer (checked 2026-10-22). */
+export const HOLIDAYS = [
+  { eventName: 'Christmas', atDate: '2026-12-25', tradingHour: '', postMarket: '' },
+  { eventName: 'Christmas', atDate: '2026-12-24', tradingHour: '09:30-13:00', postMarket: '13:00:17:00' },
+  { eventName: 'Thanksgiving Day', atDate: '2026-11-27', tradingHour: '09:30-13:00', postMarket: '13:00:17:00' },
+  { eventName: 'Thanksgiving Day', atDate: '2026-11-26', tradingHour: '', postMarket: '' },
+  { eventName: 'Labor Day', atDate: '2026-09-07', tradingHour: '', postMarket: '' },
+];
+
+export function holidaysRoute(status = 200): Handler {
+  return () => jsonRes(status === 200 ? { data: HOLIDAYS, exchange: 'US', timezone: 'America/New_York' } : { error: 'x' }, status);
+}
+
+/** Alpaca calendar (disabled adapter only). */
 export function calendarRoute(open = '09:30', close = '16:00', holiday = false): Handler {
   return url => {
     const date = url.searchParams.get('start');
@@ -79,8 +96,6 @@ export function calendarRoute(open = '09:30', close = '16:00', holiday = false):
 export function makeEnv(kv: FakeKV, extra: Partial<Env> = {}): Env {
   return {
     PRICES: kv as unknown as KVNamespace,
-    ALPACA_KEY_ID: 'test-key-id',
-    ALPACA_SECRET_KEY: 'test-secret',
     FINNHUB_KEY: 'test-finnhub',
     ...extra,
   };
@@ -95,3 +110,20 @@ export function makeDeps(fetchFn: typeof fetch, now: Date | (() => Date)): Deps 
 }
 
 export const ALL = SYMBOLS;
+
+/** Finnhub answering every quote at `price(sym)`, traded 30 s before `now()`. */
+export function finnhubWorld(now: () => Date, price: (sym: string) => number = () => 100, extra: Record<string, Handler> = {}) {
+  return fakeFetch({
+    [FINNHUB_HOLIDAYS]: holidaysRoute(),
+    [FINNHUB]: url => jsonRes(finnhubBody(price(url.searchParams.get('symbol') ?? ''), new Date(now().getTime() - 30_000).toISOString())),
+    ...extra,
+  });
+}
+
+/** Three runs a minute apart, ending at `now`: every ticker gets a price (45 a run). */
+export async function seedAll(kv: FakeKV, now: Date, price?: (sym: string) => number): Promise<void> {
+  for (let i = 2; i >= 0; i--) {
+    const at = new Date(now.getTime() - i * 60_000);
+    await refresh(makeEnv(kv), makeDeps(finnhubWorld(() => at, price).fn, at));
+  }
+}

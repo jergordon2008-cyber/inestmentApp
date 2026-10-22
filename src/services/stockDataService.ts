@@ -318,6 +318,8 @@ export interface LiveQuoteInput {
   src: 'alpaca' | 'finnhub';
   hi?: number;
   lo?: number;
+  /** When the robot last confirmed it with Finnhub (ISO); see priceRobotAdapter. */
+  at?: string;
 }
 
 interface LiveEntry extends LiveQuoteInput {
@@ -330,13 +332,14 @@ const _live: Record<string, LiveEntry> = {};
 /**
  * Stores prices from the robot. `origin` says where they came from: 'live'
  * (fetched from the robot just now) or 'saved' (read back from the device).
- * A saved price never replaces a live one, and an older trade never replaces
- * a newer one.
+ * `fetchedAt` is when each price was confirmed (a number for all, or per
+ * quote); CONFIRMED_FOR_MS counts from it. A saved price never replaces a
+ * live one, and an older trade never replaces a newer one.
  */
 export function applyLiveQuotes(
   quotes: Record<string, LiveQuoteInput>,
   origin: 'live' | 'saved',
-  fetchedAt: number = Date.now(),
+  fetchedAt: number | ((q: LiveQuoteInput) => number) = Date.now(),
 ): number {
   let applied = 0;
   for (const [rawSymbol, q] of Object.entries(quotes)) {
@@ -348,7 +351,7 @@ export function applyLiveQuotes(
       if (origin === 'saved' && prev.origin === 'live') continue;
       if (Date.parse(q.t) < Date.parse(prev.t)) continue;
     }
-    _live[sym] = { ...q, origin, fetchedAt };
+    _live[sym] = { ...q, origin, fetchedAt: typeof fetchedAt === 'function' ? fetchedAt(q) : fetchedAt };
     applied++;
   }
   return applied;

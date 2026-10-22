@@ -2,9 +2,11 @@
  * Price robot client.
  *
  * Prices come from our Cloudflare Worker (workers/price-robot), which
- * refreshes every ticker from Alpaca every 2 minutes during market hours and
- * cross-checks against Finnhub. The app holds no API keys: it reads one
- * public URL, EXPO_PUBLIC_PRICE_API_URL.
+ * refreshes prices from Finnhub every minute during market hours: the
+ * tickers students hold or opened recently every minute, every other ticker
+ * at least every 3 minutes. The app holds no API keys: it reads one public
+ * URL, EXPO_PUBLIC_PRICE_API_URL, and tells the robot which tickers this
+ * student holds (?held=) so they are refreshed first.
  *
  * Never blank, never stuck: screens render at once from stockDataService
  * (live → saved → January snapshot), and every fetch here gives up after
@@ -17,8 +19,12 @@ import { applyLiveQuotes, type LiveQuoteInput } from './stockDataService';
 export const PRICE_API_URL = (process.env.EXPO_PUBLIC_PRICE_API_URL ?? '').replace(/\/+$/, '');
 export const LIVE_DATA_ENABLED = !!PRICE_API_URL;
 
-/** The robot refreshes every 2 minutes; polling faster only re-reads the same prices. */
-export const POLL_MS = 2 * 60 * 1000;
+/**
+ * The robot writes new prices every minute. Polling every minute keeps a
+ * price's age (robot confirmation + time on this device) under the 5-minute
+ * trade rule between polls.
+ */
+export const POLL_MS = 60 * 1000;
 export const FETCH_TIMEOUT_MS = 5000;
 const STORAGE_KEY = 'priceRobot:v1';
 
@@ -27,19 +33,52 @@ function logFailure(where: string, e: unknown): void {
   console.warn(`[price robot] ${where} failed:`, e);
 }
 
-/** Shown next to prices; both providers' display approvals ask for credit. */
-export const PRICE_CREDIT = 'Prices from Alpaca/Finnhub';
+/** Shown next to prices: credits the source. */
+export const PRICE_CREDIT = 'Prices from Finnhub';
 
-interface RobotQuote extends LiveQuoteInput { stale?: boolean }
+type RobotQuote = LiveQuoteInput;
 
 export interface RobotPrices {
   v: 1;
   asOf: string;
   market: 'open' | 'closed' | 'after-close';
-  final: boolean;
-  session: { date: string } | null;
-  alpacaOk: boolean;
   quotes: Record<string, RobotQuote>;
+}
+
+/** Tickers this student holds; sent with each poll so the robot refreshes them first. */
+let heldSymbols: () => readonly string[] = () => [];
+const MAX_HELD = 40;
+
+export function setHeldSymbolsProvider(provider: () => readonly string[]): void {
+  heldSymbols = provider;
+}
+
+function pricesPath(): string {
+  let held: string[] = [];
+  try {
+    held = [...new Set(heldSymbols().map(s => s.toUpperCase()).filter(s => /^[A-Z.]{1,10}$/.test(s)))].sort().slice(0, MAX_HELD);
+  } catch (e) {
+    logFailure('held', e);
+  }
+  return held.length ? `/v1/prices?held=${held.join(',')}` : '/v1/prices';
+}
+
+/**
+ * When the robot last confirmed each price with Finnhub, on this device's
+ * clock. During the session that's the robot's own confirmation (`at`),
+ * measured against the robot's run time (`asOf`) so a wrong device clock
+ * doesn't matter; the 5-minute trade rule (CONFIRMED_FOR_MS) then counts
+ * from it. Outside the session closing prices don't change, so they count
+ * from this fetch.
+ */
+function confirmedAtFor(asOf: string, market: RobotPrices['market'], now: number): (q: LiveQuoteInput) => number {
+  const asOfMs = Date.parse(asOf);
+  return q => {
+    if (market !== 'open') return now;
+    const at = Date.parse(q.at ?? '');
+    if (!Number.isFinite(at) || !Number.isFinite(asOfMs)) return 0;
+    return now - Math.max(0, asOfMs - at);
+  };
 }
 
 export type PriceStatus =
@@ -110,11 +149,11 @@ export function refreshPrices(): Promise<boolean> {
   if (inflight) return inflight;
   inflight = (async () => {
     try {
-      const body = await fetchJson('/v1/prices');
+      const body = await fetchJson(pricesPath());
       if (!isRobotPrices(body)) throw new Error('price robot: unexpected /v1/prices payload');
       const quotes = cleanQuotes(body.quotes);
       const now = Date.now();
-      applyLiveQuotes(quotes, 'live', now);
+      applyLiveQuotes(quotes, 'live', confirmedAtFor(body.asOf, body.market, now));
       lastLiveFetchAt = now;
       setStatus({ kind: 'live', asOf: body.asOf, market: body.market, latestTrade: latestTradeOf(quotes) });
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ ...body, quotes }))
@@ -143,16 +182,18 @@ export async function ensureFresh(maxAgeMs: number = POLL_MS): Promise<void> {
 }
 
 /**
- * One ticker, straight from the robot. The robot refetches it from Alpaca if
- * its stored price is more than 4 minutes old, so a stock a student opens
- * jumps the queue. Returns whether the robot answered with a price.
+ * One ticker, straight from the robot's store. Asking also tells the robot a
+ * student opened this stock, so its next run (within a minute) refreshes it
+ * first. Returns whether the robot answered with a price.
  */
 export async function refreshQuote(symbol: string): Promise<boolean> {
   if (!LIVE_DATA_ENABLED) return false;
   try {
-    const body = await fetchJson(`/v1/quote/${encodeURIComponent(symbol.toUpperCase())}`) as { quote?: unknown };
+    const body = await fetchJson(`/v1/quote/${encodeURIComponent(symbol.toUpperCase())}`) as { quote?: unknown; asOf?: unknown; market?: unknown };
     if (!isQuote(body?.quote)) throw new Error('price robot: unexpected /v1/quote payload');
-    applyLiveQuotes({ [symbol]: body.quote }, 'live', Date.now());
+    const asOf = typeof body.asOf === 'string' ? body.asOf : '';
+    const market = body.market === 'open' || body.market === 'closed' || body.market === 'after-close' ? body.market : 'open';
+    applyLiveQuotes({ [symbol]: body.quote }, 'live', confirmedAtFor(asOf, market, Date.now()));
     return true;
   } catch (e) {
     logFailure('quote', e);
@@ -180,7 +221,7 @@ export async function loadSavedPrices(): Promise<boolean> {
   }
 }
 
-/** Boot: saved prices first (instant), then the robot, then every 2 minutes. */
+/** Boot: saved prices first (instant), then the robot, then every minute. */
 export async function startPriceRobot(): Promise<void> {
   if (!LIVE_DATA_ENABLED || timer) return;
   // The timer is set before any await, so a second call (React runs effects
@@ -237,7 +278,8 @@ export function getStockPriceLabel(
 ): string {
   if (s.kind === 'simulated') return 'Simulated prices';
   if (!stock?.priceOrigin) return 'Not live · Jan 15 snapshot';
-  const source = stock.priceSource === 'finnhub' ? 'Finnhub' : 'Alpaca';
+  // 'alpaca' only on prices saved on a device before the switch to Finnhub.
+  const source = stock.priceSource === 'alpaca' ? 'Alpaca' : 'Finnhub';
   if (stock.priceOrigin === 'saved') return `Saved price from ${day(stock.lastUpdated)}, ${time(stock.lastUpdated)} · ${source}`;
   if (s.kind === 'live' && s.market !== 'open') return `Closing price · ${day(stock.lastUpdated)} · ${source}`;
   const today = new Date().toDateString() === new Date(stock.lastUpdated).toDateString();

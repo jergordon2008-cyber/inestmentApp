@@ -2,7 +2,7 @@
   "name": "price-robot",
   "version": "1.0.0",
   "private": true,
-  "description": "Cloudflare Worker that refreshes stock prices (Alpaca primary, Finnhub cross-check) into Workers KV and serves them to the app.",
+  "description": "Cloudflare Worker that refreshes stock prices from Finnhub into Workers KV and serves them to the app.",
   "scripts": {
     "dev": "node scripts/write-dev-vars.mjs && wrangler dev --test-scheduled",
     "deploy": "wrangler deploy",

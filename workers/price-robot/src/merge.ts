@@ -1,38 +1,43 @@
 /**
- * The per-ticker rules: which price to show, and which tickers Finnhub
- * should check next. Pure functions; refresh.ts does the I/O.
+ * Which tickers to fetch this run, and how the answers are folded into the
+ * stored prices. Pure functions; refresh.ts does the I/O.
  */
-import { SYMBOLS, TIER1 } from './symbols';
-import type { AlpacaResult } from './alpaca';
 import type { Phase, Session } from './calendar';
-import type { PriceBlob, Quote, Source, SourceQuote } from './types';
+import { PRIORITY_SLOTS } from './finnhub';
+import { SYMBOLS, TIER1 } from './symbols';
+import type { PriceBlob, Quote, SourceQuote } from './types';
 
-/** An Alpaca trade older than this is stale ("no recent IEX trade"). */
-export const FRESH_MS = 15 * 60_000;
-/** Alpaca and Finnhub further apart than this (percent) → show Finnhub's price. */
-export const DIVERGENCE_PCT = 1.0;
-const MAX_RETRY = 30;
+/** A price confirmed longer ago than this is no longer "live" (the app's trade rule). */
+export const CONFIRM_MS = 5 * 60_000;
 
 const TIER1_SET = new Set(TIER1);
 
 /**
- * Up to `n` tickers for Finnhub this run: last run's flagged tickers first,
- * then the ones Finnhub checked longest ago (never-checked first), Tier 1
- * before the rest on ties. That one ordering is both the normal rotation
- * (every ticker is checked about every 15 minutes) and the outage plan
- * (when Alpaca is down, Tier 1 gets Finnhub prices first).
+ * Up to `n` tickers for this run:
+ * 1. up to PRIORITY_SLOTS tickers students hold or opened recently, the
+ *    least recently confirmed first;
+ * 2. the rest of the budget goes to every other ticker, least recently
+ *    confirmed first (never-confirmed first, Tier 1 before the rest on ties).
+ *
+ * With 45 calls a run and 12 priority slots, priority tickers are refreshed
+ * every minute and every other ticker at least every 3 minutes, whatever
+ * the priority list holds (docs/PRICE-ROBOT-DESIGN.md §3).
  */
-export function planFinnhub(prev: PriceBlob | null, n: number, symbols: readonly string[] = SYMBOLS): string[] {
+export function planRun(
+  prev: PriceBlob | null,
+  priority: readonly string[],
+  n: number,
+  symbols: readonly string[] = SYMBOLS,
+  slots: number = PRIORITY_SLOTS,
+): string[] {
   const order = (list: readonly string[]) => list
-    .map((s, i) => ({ s, i, at: prev?.quotes[s]?.chkAt ?? '', tier: TIER1_SET.has(s) ? 0 : 1 }))
+    .map((s, i) => ({ s, i, at: prev?.quotes[s]?.at ?? '', tier: TIER1_SET.has(s) ? 0 : 1 }))
     .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.tier - b.tier || a.i - b.i))
     .map(r => r.s);
   const known = new Set(symbols);
-  // Flagged tickers are also served least-recently-checked first, so a few
-  // that stay flagged can't take every slot run after run.
-  const flagged = order([...new Set(prev?.retry ?? [])].filter(s => known.has(s)));
-  const plan = flagged.slice(0, n);
-  for (const s of order(symbols.filter(s => !plan.includes(s)))) {
+  const plan = order([...new Set(priority)].filter(s => known.has(s))).slice(0, Math.max(0, Math.min(slots, n)));
+  const chosen = new Set(plan);
+  for (const s of order(symbols.filter(s => !chosen.has(s)))) {
     if (plan.length >= n) break;
     plan.push(s);
   }
@@ -44,95 +49,68 @@ export interface MergeInput {
   now: Date;
   session: Session | null;
   phase: Phase;
-  alpaca: AlpacaResult;
   finnhub: { quotes: Record<string, SourceQuote>; tried: string[]; authStatus: number | null };
   symbols?: readonly string[];
 }
 
-function withSrc(q: SourceQuote, src: Source): Quote {
-  const out: Quote = { p: q.p, pc: q.pc, t: q.t, src };
+function fresh(q: SourceQuote, at: string): Quote {
+  const out: Quote = { p: q.p, pc: q.pc, t: q.t, src: 'finnhub', at };
   if (q.hi !== undefined) out.hi = q.hi;
   if (q.lo !== undefined) out.lo = q.lo;
   return out;
 }
 
-function pctDiff(a: number, b: number): number {
-  return Math.round((Math.abs(a - b) / b) * 100 * 1000) / 1000;
+/** A stored quote, trimmed to today's fields (older blobs carried a few more). */
+function kept(q: Quote): Quote {
+  const out: Quote = { p: q.p, pc: q.pc, t: q.t, src: q.src, at: q.at ?? '' };
+  if (q.hi !== undefined) out.hi = q.hi;
+  if (q.lo !== undefined) out.lo = q.lo;
+  return out;
 }
 
 export function mergeRun(input: MergeInput): PriceBlob {
-  const { prev, now, alpaca, finnhub } = input;
+  const { prev, now, finnhub } = input;
   const nowIso = now.toISOString();
-  const nowMs = now.getTime();
   const symbols = input.symbols ?? SYMBOLS;
-  const tried = new Set(finnhub.tried);
   const quotes: Record<string, Quote> = {};
-  const retry: string[] = [];
 
   for (const sym of symbols) {
-    const prevQ = prev?.quotes[sym];
-    const a = alpaca.ok ? alpaca.quotes[sym] : undefined;
     const f = finnhub.quotes[sym];
-    const aFresh = !!a && nowMs - Date.parse(a.t) <= FRESH_MS;
-    let q: Quote | undefined;
-
-    if (a && aFresh) {
-      if (f) {
-        const diff = pctDiff(a.p, f.p);
-        if (diff > DIVERGENCE_PCT) {
-          q = withSrc(f, 'finnhub');
-          retry.push(sym); // look again next run
-        } else {
-          q = withSrc(a, 'alpaca');
-        }
-        q.chk = diff;
-      } else {
-        q = withSrc(a, 'alpaca');
-        if (prevQ?.chk !== undefined) q.chk = prevQ.chk;
-      }
-    } else if (f) {
-      q = withSrc(f, 'finnhub');
-      if (a) q.chk = pctDiff(a.p, f.p);
-    } else {
-      // Nothing new this run: keep the newest price we have. If even that is
-      // older than 15 minutes, mark it stale and ask Finnhub for it first
-      // next run. (A Finnhub price from a recent run is still fresh.)
-      const candidates: Quote[] = [];
-      if (a) candidates.push(withSrc(a, 'alpaca'));
-      if (prevQ) candidates.push({ ...prevQ });
-      candidates.sort((x, y) => Date.parse(y.t) - Date.parse(x.t));
-      q = candidates[0];
-      if (!q || nowMs - Date.parse(q.t) > FRESH_MS) {
-        if (q) q.stale = true;
-        retry.push(sym);
-      }
-    }
-
-    if (!q) continue;
-    if (!q.stale) delete q.stale;
-    const chkAt = tried.has(sym) ? nowIso : prevQ?.chkAt;
-    if (chkAt) q.chkAt = chkAt;
-    else delete q.chkAt;
-    quotes[sym] = q;
+    const prevQ = prev?.quotes[sym];
+    // A newer trade, or the same one re-confirmed, replaces the stored price;
+    // an answer with an older trade time than we have is ignored.
+    if (f && (!prevQ || Date.parse(f.t) >= Date.parse(prevQ.t))) quotes[sym] = fresh(f, nowIso);
+    else if (f && prevQ) quotes[sym] = { ...kept(prevQ), at: nowIso };
+    else if (prevQ) quotes[sym] = kept(prevQ);
   }
 
-  let authError: PriceBlob['authError'] = null;
-  if (!alpaca.ok && (alpaca.status === 401 || alpaca.status === 403)) {
-    authError = { source: 'alpaca', status: alpaca.status, at: nowIso };
-  } else if (finnhub.authStatus) {
-    authError = { source: 'finnhub', status: finnhub.authStatus, at: nowIso };
-  }
+  const sameDay = prev?.session?.date === input.session?.date;
+  let closeFrom: string | null = null;
+  if (input.phase === 'after-close') closeFrom = sameDay && prev?.closeFrom ? prev.closeFrom : nowIso;
+  const final = closeFrom !== null && symbols.every(s => (quotes[s]?.at ?? '') >= closeFrom!);
 
+  const got = Object.keys(finnhub.quotes).length;
+  const finnhubOk = got > 0 || finnhub.tried.length === 0;
   return {
     v: 1,
     asOf: nowIso,
     session: input.session,
     market: input.phase,
-    final: input.phase === 'after-close',
-    alpacaOk: alpaca.ok,
-    alpacaFails: alpaca.ok ? 0 : (prev?.alpacaFails ?? 0) + 1,
-    authError,
-    retry: retry.slice(0, MAX_RETRY),
+    final,
+    closeFrom,
+    finnhubOk,
+    finnhubFails: finnhubOk ? 0 : (prev?.finnhubFails ?? 0) + 1,
+    authError: finnhub.authStatus ? { source: 'finnhub', status: finnhub.authStatus, at: nowIso } : null,
     quotes,
   };
+}
+
+/** Tickers whose last confirmation is older than CONFIRM_MS (or that have none). */
+export function countOld(blob: PriceBlob | null, now: Date, symbols: readonly string[] = SYMBOLS): number {
+  let old = 0;
+  for (const s of symbols) {
+    const at = Date.parse(blob?.quotes[s]?.at ?? '');
+    if (!(now.getTime() - at <= CONFIRM_MS)) old++;
+  }
+  return old;
 }

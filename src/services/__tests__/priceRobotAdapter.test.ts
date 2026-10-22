@@ -16,20 +16,19 @@ type Facade = typeof import('../marketDataFacade');
 
 const URL_BASE = 'https://robot.test';
 const T = '2026-10-07T17:59:30.000Z';
+const AS_OF = '2026-10-07T18:00:00.000Z';
+const AT = '2026-10-07T17:59:40.000Z';   // confirmed 20 s before the run that wrote the blob
 
 function pricesBody(over: Record<string, unknown> = {}) {
   return {
     v: 1,
-    asOf: '2026-10-07T18:00:00.000Z',
+    asOf: AS_OF,
     market: 'open',
-    final: false,
-    session: { date: '2026-10-07' },
-    alpacaOk: true,
     quotes: {
-      AAPL: { p: 333.75, pc: 330.44, t: T, src: 'alpaca', hi: 334.5, lo: 330.6 },
-      VOO: { p: 707.54, pc: 702.35, t: T, src: 'finnhub' },
-      XYZ: { p: 74.35, pc: 74.03, t: T, src: 'alpaca' },
-      BAD: { p: -1, t: 'nope', src: 'alpaca' },
+      AAPL: { p: 333.75, pc: 330.44, t: T, src: 'finnhub', hi: 334.5, lo: 330.6, at: AT },
+      VOO: { p: 707.54, pc: 702.35, t: T, src: 'finnhub', at: AT },
+      XYZ: { p: 74.35, pc: 74.03, t: T, src: 'finnhub', at: AT },
+      BAD: { p: -1, t: 'nope', src: 'finnhub' },
     },
     ...over,
   };
@@ -76,7 +75,7 @@ describe('live prices from the robot', () => {
     expect(await adapter.refreshPrices()).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(`${URL_BASE}/v1/prices`, expect.anything());
     const aapl = store.getStock('AAPL')!;
-    expect(aapl).toMatchObject({ price: 333.75, previousClose: 330.44, lastUpdated: T, priceSource: 'alpaca', priceOrigin: 'live', dayHigh: 334.5 });
+    expect(aapl).toMatchObject({ price: 333.75, previousClose: 330.44, lastUpdated: T, priceSource: 'finnhub', priceOrigin: 'live', dayHigh: 334.5 });
     expect(store.isLiveQuote(aapl)).toBe(true);
     expect(store.getStock('VOO')?.priceSource).toBe('finnhub');
     expect(adapter.getPriceStatus()).toMatchObject({ kind: 'live', market: 'open' });
@@ -118,6 +117,46 @@ describe('live prices from the robot', () => {
     expect(adapter.getPriceStatus().kind).toBe('snapshot');
   });
 
+  it('sends the student\'s holdings so the robot refreshes them first', async () => {
+    const { adapter } = await load();
+    adapter.setHeldSymbolsProvider(() => ['voo', 'AAPL', 'VOO', 'bad symbol!']);
+    fetchMock.mockReturnValueOnce(okJson(pricesBody()));
+    await adapter.refreshPrices();
+    expect(fetchMock).toHaveBeenCalledWith(`${URL_BASE}/v1/prices?held=AAPL,VOO`, expect.anything());
+  });
+
+  it('a holdings provider that throws doesn\'t stop the refresh', async () => {
+    const { adapter } = await load();
+    adapter.setHeldSymbolsProvider(() => { throw new Error('store not ready'); });
+    fetchMock.mockReturnValueOnce(okJson(pricesBody()));
+    expect(await adapter.refreshPrices()).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith(`${URL_BASE}/v1/prices`, expect.anything());
+  });
+
+  it('during the session, the 5 minutes count from the robot\'s confirmation, not from this fetch', async () => {
+    const { adapter, store } = await load();
+    // AAPL confirmed 4 min before the run; VOO 20 s before. Device clock is irrelevant.
+    fetchMock.mockReturnValueOnce(okJson(pricesBody({ quotes: {
+      AAPL: { p: 333.75, pc: 330.44, t: T, src: 'finnhub', at: '2026-10-07T17:56:00.000Z' },
+      VOO: { p: 707.54, pc: 702.35, t: T, src: 'finnhub', at: AT },
+      KO: { p: 70, pc: 69, t: T, src: 'finnhub' },                  // never confirmed (old blob)
+    } })));
+    await adapter.refreshPrices();
+    const now = Date.now();
+    expect(store.isLiveQuote(store.getStock('AAPL'))).toBe(true);
+    expect(store.isLiveQuote(store.getStock('KO'))).toBe(false);
+    jest.spyOn(Date, 'now').mockReturnValue(now + 61_000);          // 5 min + 1 s since AAPL's confirmation
+    expect(store.isLiveQuote(store.getStock('AAPL'))).toBe(false);
+    expect(store.isLiveQuote(store.getStock('VOO'))).toBe(true);
+  });
+
+  it('after the close, closing prices count from this fetch', async () => {
+    const { adapter, store } = await load();
+    fetchMock.mockReturnValueOnce(okJson(pricesBody({ market: 'closed', quotes: { AAPL: { p: 1, pc: 1, t: T, src: 'finnhub', at: '2026-10-07T12:00:00.000Z' } } })));
+    await adapter.refreshPrices();
+    expect(store.isLiveQuote(store.getStock('AAPL'))).toBe(true);
+  });
+
   it('a live price stops counting as confirmed after 5 minutes without a refresh', async () => {
     const { adapter, store } = await load();
     fetchMock.mockReturnValueOnce(okJson(pricesBody()));
@@ -147,14 +186,14 @@ describe('saved prices (device storage)', () => {
     const { adapter, store, storage } = await load();
     fetchMock.mockReturnValueOnce(okJson(pricesBody()));
     await adapter.refreshPrices();
-    await storage.setItem('priceRobot:v1', JSON.stringify(pricesBody({ quotes: { AAPL: { p: 1, pc: 1, t: '2026-10-08T00:00:00.000Z', src: 'alpaca' } } })));
+    await storage.setItem('priceRobot:v1', JSON.stringify(pricesBody({ quotes: { AAPL: { p: 1, pc: 1, t: '2026-10-08T00:00:00.000Z', src: 'finnhub' } } })));
     await adapter.loadSavedPrices();
     expect(store.getStock('AAPL')).toMatchObject({ price: 333.75, priceOrigin: 'live' });
   });
 
   it('startPriceRobot: saved first, then live', async () => {
     const { adapter, store, storage } = await load();
-    await storage.setItem('priceRobot:v1', JSON.stringify(pricesBody({ quotes: { AAPL: { p: 300, pc: 299, t: '2026-10-06T19:59:00.000Z', src: 'alpaca' } } })));
+    await storage.setItem('priceRobot:v1', JSON.stringify(pricesBody({ quotes: { AAPL: { p: 300, pc: 299, t: '2026-10-06T19:59:00.000Z', src: 'finnhub' } } })));
     fetchMock.mockReturnValueOnce(okJson(pricesBody()));
     await adapter.startPriceRobot();
     adapter.stopPriceRobot();
@@ -178,9 +217,9 @@ describe('polling', () => {
 });
 
 describe('facade', () => {
-  it('fetchStock asks the robot for that ticker (jumps the queue)', async () => {
+  it('fetchStock asks the robot for that ticker (and makes it a priority)', async () => {
     const { facade } = await load();
-    fetchMock.mockReturnValueOnce(okJson({ symbol: 'AAPL', quote: { p: 340, pc: 330, t: '2026-10-07T18:01:00.000Z', src: 'alpaca' } }));
+    fetchMock.mockReturnValueOnce(okJson({ symbol: 'AAPL', asOf: '2026-10-07T18:01:10.000Z', market: 'open', quote: { p: 340, pc: 330, t: '2026-10-07T18:01:00.000Z', src: 'finnhub', at: '2026-10-07T18:01:05.000Z' } }));
     const s = await facade.fetchStock('AAPL');
     expect(fetchMock).toHaveBeenCalledWith(`${URL_BASE}/v1/quote/AAPL`, expect.anything());
     expect(s).toMatchObject({ price: 340, priceOrigin: 'live' });
@@ -194,7 +233,7 @@ describe('facade', () => {
     expect(facade.isLiveQuote(s)).toBe(false); // so TradeScreen won't fill on it
   });
 
-  it('fetchStocks refreshes at most once per 2 minutes', async () => {
+  it('fetchStocks refreshes at most once per poll interval', async () => {
     const { facade } = await load();
     fetchMock.mockReturnValue(okJson(pricesBody()));
     await facade.fetchStocks(['AAPL']);
@@ -207,16 +246,15 @@ describe('facade', () => {
     fetchMock.mockReturnValueOnce(okJson(pricesBody()));
     await adapter.refreshPrices();
     jest.spyOn(Date.prototype, 'toDateString').mockReturnValue('same day');
-    expect(facade.getDataSourceLabel(store.getStock('AAPL'))).toMatch(/^Price as of .+ · Alpaca$/);
-    expect(facade.getDataSourceLabel(store.getStock('VOO'))).toMatch(/ · Finnhub$/);
+    expect(facade.getDataSourceLabel(store.getStock('AAPL'))).toMatch(/^Price as of .+ · Finnhub$/);
   });
 
   it('after the close the labels say closing prices', async () => {
     const { adapter, facade, store } = await load();
-    fetchMock.mockReturnValueOnce(okJson(pricesBody({ market: 'after-close', final: true })));
+    fetchMock.mockReturnValueOnce(okJson(pricesBody({ market: 'after-close' })));
     await adapter.refreshPrices();
     expect(adapter.getPricesLabel()).toMatch(/^Closing prices · /);
-    expect(facade.getDataSourceLabel(store.getStock('AAPL'))).toMatch(/^Closing price · .+ · Alpaca$/);
+    expect(facade.getDataSourceLabel(store.getStock('AAPL'))).toMatch(/^Closing price · .+ · Finnhub$/);
   });
 });
 
@@ -234,7 +272,12 @@ describe('ticker change SQ → XYZ', () => {
 });
 
 describe('credit', () => {
-  it('names both providers', async () => {
-    expect((await load()).adapter.PRICE_CREDIT).toBe('Prices from Alpaca/Finnhub');
+  it('names the source', async () => {
+    expect((await load()).adapter.PRICE_CREDIT).toBe('Prices from Finnhub');
+  });
+
+  it('a price saved on a device before the switch still says Alpaca', async () => {
+    const { adapter } = await load();
+    expect(adapter.getStockPriceLabel({ lastUpdated: T, priceSource: 'alpaca', priceOrigin: 'saved' }, { kind: 'saved', asOf: T, market: 'open', latestTrade: T })).toMatch(/ · Alpaca$/);
   });
 });

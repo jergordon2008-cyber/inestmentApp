@@ -9,17 +9,14 @@ export interface SourceQuote {
   lo?: number;          // day low
 }
 
-export type Source = 'alpaca' | 'finnhub';
+/** Finnhub is the only live source; 'alpaca' only appears in blobs from before the switch. */
+export type Source = 'finnhub' | 'alpaca';
 
-/** The price the robot chose for one ticker. */
+/** The price the robot holds for one ticker. */
 export interface Quote extends SourceQuote {
   src: Source;
-  /** Last Alpaca-vs-Finnhub difference, in percent (absent until checked). */
-  chk?: number;
-  /** When Finnhub last answered for this ticker. */
-  chkAt?: string;
-  /** No fresh trade from either source: this is the last known price. */
-  stale?: true;
+  /** When Finnhub last returned this ticker ("confirmed at"). '' = never. */
+  at: string;
 }
 
 /** KV key `prices:v1`: everything the app reads, plus the robot's own bookkeeping. */
@@ -28,18 +25,18 @@ export interface PriceBlob {
   asOf: string;               // ISO time of the run that wrote this
   session: Session | null;
   market: Phase;
-  final: boolean;             // closing snapshot taken for session.date
-  alpacaOk: boolean;
-  alpacaFails: number;        // consecutive failed runs
+  final: boolean;             // closing snapshot complete for session.date
+  /** asOf of today's first run after the close; quotes confirmed since then are closing prices. */
+  closeFrom: string | null;
+  finnhubOk: boolean;         // the last run got at least one quote
+  finnhubFails: number;       // consecutive runs without a single quote
   authError: { source: Source; status: number; at: string } | null;
-  retry: string[];            // tickers Finnhub should check first next run
   quotes: Record<string, Quote>;
 }
 
 export interface Env {
   PRICES: KVNamespace;
-  ALPACA_KEY_ID: string;
-  ALPACA_SECRET_KEY: string;
+  /** Server-only Finnhub key, used by nothing else (never the app's key). */
   FINNHUB_KEY: string;
   /** ntfy.sh topic URL or Discord webhook URL. Optional: without it alerts only go to the log. */
   ALERT_URL?: string;

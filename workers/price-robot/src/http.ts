@@ -1,9 +1,14 @@
 /**
  * The app-facing API. Read-only; the API keys never leave the Worker.
  *
- *   GET /v1/prices       every ticker, from KV, cached 30 s
- *   GET /v1/quote/:sym   one ticker; refetched from Alpaca if > 4 min old, cached 15 s
- *   GET /v1/health       age and source counts; 503 when stale in session
+ *   GET /v1/prices       every ticker, from KV, cached 30 s. ?held=AAPL,VOO
+ *                        marks the student's holdings as priority tickers.
+ *   GET /v1/quote/:sym   one ticker, from KV, cached 15 s; marks it as a
+ *                        priority ticker ("recently opened")
+ *   GET /v1/health       age and freshness counts; 503 when stale in session
+ *
+ * None of these call Finnhub: only the cron does, so the 45/min budget holds
+ * whatever the traffic.
  *
  * /v1/prices and /v1/quote/* answer 403 unless the request's Origin header is
  * one of ALLOWED_ORIGINS (so a request with no Origin, e.g. curl or a browser
@@ -15,16 +20,13 @@
  * nothing. A script outside a browser can still send any Origin it likes, so
  * this is not authentication and does not stop deliberate scraping.
  */
-import { fetchAlpacaSnapshots } from './alpaca';
 import { defaultSession, etNow, phaseAt, type Session } from './calendar';
+import { flushDemand, noteDemand, parseHeld } from './demand';
 import { readBlob } from './kv';
-import { FRESH_MS } from './merge';
-import { resolveSymbol } from './symbols';
+import { countOld } from './merge';
+import { resolveSymbol, SYMBOLS } from './symbols';
 import type { Deps, Env, PriceBlob, Quote } from './types';
 import { STALE_AFTER_MS } from './watchdog';
-
-/** A quote older than this during the session is refetched on demand. */
-export const ON_DEMAND_AFTER_MS = 4 * 60_000;
 const PRICES_MAX_AGE = 30;
 const QUOTE_MAX_AGE = 15;
 
@@ -79,7 +81,7 @@ function json(body: unknown, status: number, maxAge: number): Response {
 /**
  * 403 for a request that isn't from an allowed site. No CORS headers (the
  * browser reports it as blocked), no caching, and nothing has been read from
- * KV or fetched from Alpaca by the time this is returned.
+ * KV by the time this is returned.
  */
 function refuseUnlessAllowedOrigin(req: Request, env: Env): Response | null {
   const origin = req.headers.get('Origin');
@@ -92,13 +94,14 @@ function refuseUnlessAllowedOrigin(req: Request, env: Env): Response | null {
 
 /**
  * The fields the app reads from a quote (priceRobotAdapter + stockDataService:
- * price, previous close, trade time, source, day high/low). An allow-list on
- * purpose: a field added to Quote later is not served until it is added here.
+ * price, previous close, trade time, source, day high/low, and when the robot
+ * last confirmed it with Finnhub). An allow-list on purpose: a field added to
+ * Quote later is not served until it is added here.
  */
-export type PublicQuote = Pick<Quote, 'p' | 'pc' | 't' | 'src' | 'hi' | 'lo'>;
+export type PublicQuote = Pick<Quote, 'p' | 'pc' | 't' | 'src' | 'hi' | 'lo' | 'at'>;
 
 function publicQuote(q: Quote): PublicQuote {
-  const out: PublicQuote = { p: q.p, pc: q.pc, t: q.t, src: q.src };
+  const out: PublicQuote = { p: q.p, pc: q.pc, t: q.t, src: q.src, at: q.at ?? '' };
   if (q.hi !== undefined) out.hi = q.hi;
   if (q.lo !== undefined) out.lo = q.lo;
   return out;
@@ -106,9 +109,9 @@ function publicQuote(q: Quote): PublicQuote {
 
 /**
  * What /v1/prices serves: only what the app reads (v, asOf, market and each
- * quote's PublicQuote fields). Not served: the robot's bookkeeping (chk,
- * retry, auth errors), the stale flag, and the session/final/alpacaOk status,
- * none of which the app uses; /v1/health has the status.
+ * quote's PublicQuote fields). Not served: the robot's bookkeeping (auth
+ * errors, failure counts) and the session/final/closeFrom status, none of
+ * which the app uses; /v1/health has the status.
  */
 export function publicView(blob: PriceBlob) {
   const quotes: Record<string, PublicQuote> = {};
@@ -171,6 +174,7 @@ export async function handleRequest(req: Request, env: Env, deps: Deps, ctx?: Ex
   if (path === '/v1/prices') {
     const refused = refuseUnlessAllowedOrigin(req, env);
     if (refused) return refused;
+    recordDemand(parseHeld(new URL(req.url).searchParams.get('held')), env, deps, ctx);
     const res = await cached('v1/prices', PRICES_MAX_AGE, deps.now(), async () => {
       const blob = await readBlob(env.PRICES, PRICES_MAX_AGE);
       return blob ? json(publicView(blob), 200, PRICES_MAX_AGE) : json({ error: 'no prices yet' }, 503, 0);
@@ -184,7 +188,8 @@ export async function handleRequest(req: Request, env: Env, deps: Deps, ctx?: Ex
     if (refused) return refused;
     const sym = resolveSymbol(quoteMatch[1]!);
     if (!sym) return withCors(json({ error: 'unknown symbol' }, 404, 300), req, env);
-    const res = await cached(`v1/quote/${sym}`, QUOTE_MAX_AGE, deps.now(), () => quoteResponse(sym, env, deps), ctx);
+    recordDemand([sym], env, deps, ctx);
+    const res = await cached(`v1/quote/${sym}`, QUOTE_MAX_AGE, deps.now(), () => quoteResponse(sym, env), ctx);
     return withCors(res, req, env);
   }
 
@@ -196,20 +201,18 @@ export async function handleRequest(req: Request, env: Env, deps: Deps, ctx?: Ex
     const ageMs = blob ? now.getTime() - Date.parse(blob.asOf) : null;
     const inSession = phaseAt(et.minutes, session) !== 'closed';
     const ok = !!blob && (!inSession || (blob.final && blob.session?.date === et.date) || (ageMs ?? Infinity) <= STALE_AFTER_MS);
-    const counts = { alpaca: 0, finnhub: 0, stale: 0 };
-    for (const q of Object.values(blob?.quotes ?? {})) {
-      if (q.stale) counts.stale++;
-      else counts[q.src]++;
-    }
+    const quotes = Object.keys(blob?.quotes ?? {}).length;
+    const old = countOld(blob, now);
     return withCors(json({
       ok,
       asOf: blob?.asOf ?? null,
       ageSec: ageMs === null ? null : Math.round(ageMs / 1000),
       market: blob?.market ?? null,
       final: blob?.final ?? false,
-      alpacaOk: blob?.alpacaOk ?? null,
+      finnhubOk: blob?.finnhubOk ?? null,
       authError: blob?.authError ? { source: blob.authError.source, status: blob.authError.status } : null,
-      counts,
+      // Out of all 110: confirmed = a Finnhub price within the last 5 minutes (tradable).
+      counts: { quotes, confirmed: SYMBOLS.length - old, old },
     }, ok ? 200 : 503, 0), req, env);
   }
 
@@ -220,30 +223,24 @@ export async function handleRequest(req: Request, env: Env, deps: Deps, ctx?: Ex
 }
 
 /**
- * On demand: a ticker a student opens jumps the queue. If the stored quote is
- * more than 4 minutes old during the session (or stale), ask Alpaca for that
- * one ticker right away. Not written to KV (the 2-minute run catches up), and
- * Finnhub isn't called here, so its rate stays within the approved ~8/min.
+ * Notes priority tickers in memory and, at most once a minute per isolate,
+ * merges them into KV after the response is sent (demand.ts).
  */
-async function quoteResponse(sym: string, env: Env, deps: Deps): Promise<Response> {
+function recordDemand(symbols: string[], env: Env, deps: Deps, ctx?: ExecutionContext): void {
+  if (symbols.length === 0) return;
   const now = deps.now();
+  noteDemand(symbols, now.getTime());
+  const flush = flushDemand(env.PRICES, now).catch(() => false);
+  if (ctx) ctx.waitUntil(flush);
+}
+
+/**
+ * One ticker, from KV. No upstream call: a ticker a student opens becomes a
+ * priority ticker instead, so the next run (within a minute) refreshes it.
+ */
+async function quoteResponse(sym: string, env: Env): Promise<Response> {
   const blob = await readBlob(env.PRICES, PRICES_MAX_AGE);
-  let quote: Quote | undefined = blob?.quotes[sym];
-  const phase = phaseAt(etNow(now).minutes, sessionFor(blob, now, env));
-  const old = !quote || !!quote.stale || now.getTime() - Date.parse(quote.t) > ON_DEMAND_AFTER_MS;
-  let onDemand = false;
-
-  if (phase !== 'closed' && old) {
-    const live = await fetchAlpacaSnapshots([sym], env, deps.fetch, deps.sleep, []);
-    const a = live.ok ? live.quotes[sym] : undefined;
-    if (a && (!quote || Date.parse(a.t) > Date.parse(quote.t))) {
-      quote = { ...a, src: 'alpaca' };
-      if (now.getTime() - Date.parse(a.t) > FRESH_MS) quote.stale = true;
-      onDemand = true;
-    }
-  }
-
+  const quote = blob?.quotes[sym];
   if (!quote) return json({ error: 'no price yet' }, 503, 0);
-  const { chk: _chk, chkAt: _chkAt, ...rest } = quote;
-  return json({ symbol: sym, quote: rest, asOf: onDemand ? now.toISOString() : blob?.asOf ?? null, onDemand, market: blob?.market ?? null }, 200, QUOTE_MAX_AGE);
+  return json({ symbol: sym, quote: publicQuote(quote), asOf: blob.asOf, market: blob.market }, 200, QUOTE_MAX_AGE);
 }

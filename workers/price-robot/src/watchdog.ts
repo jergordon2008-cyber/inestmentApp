@@ -1,15 +1,18 @@
 /**
  * Watchdog (cron every 5 minutes). During the session and up to 15 minutes
  * after the close it checks the price blob; if prices are more than
- * 10 minutes old it runs one catch-up refresh (Alpaca only, so Finnhub stays
- * within its approved rate) and alerts if that didn't fix it.
+ * 10 minutes old it runs one small catch-up refresh (CATCHUP_PER_RUN Finnhub
+ * calls, so even on top of a normal run Finnhub stays under 60/min) and
+ * alerts if that didn't fix it.
  *
  * Alerts fire on changes only, one when a problem starts and one when it
  * clears, so a long outage doesn't send a message every 5 minutes. The
  * state is a small KV key written only on a change.
  */
-import { defaultSession, etNow, formatEt, type Session } from './calendar';
+import { AFTER_CLOSE_MIN, defaultSession, etNow, formatEt, type Session } from './calendar';
+import { CATCHUP_PER_RUN } from './finnhub';
 import { readBlob, WATCHDOG_KEY, writeJson } from './kv';
+import { countOld } from './merge';
 import { getSession, refresh } from './refresh';
 import type { Deps, Env, PriceBlob } from './types';
 
@@ -17,11 +20,11 @@ export const STALE_AFTER_MS = 10 * 60_000;
 /** Give the first runs of the day time to land before judging. */
 const WATCH_FROM_OPEN_MIN = 5;
 const WATCH_AFTER_CLOSE_MIN = 15;
-const ALPACA_DOWN_RUNS = 3;
-const MANY_FALLBACK = 10;
+const FINNHUB_DOWN_RUNS = 3;
+const MANY_OLD = 10;
 
-export interface WatchState { stale: boolean; alpacaDown: boolean; manyFallback: boolean; authError: boolean }
-const OK: WatchState = { stale: false, alpacaDown: false, manyFallback: false, authError: false };
+export interface WatchState { stale: boolean; finnhubDown: boolean; manyOld: boolean; authError: boolean }
+const OK: WatchState = { stale: false, finnhubDown: false, manyOld: false, authError: false };
 
 export function inWatchWindow(minutes: number, session: Session): boolean {
   if (session.open === null || session.close === null) return false;
@@ -30,14 +33,17 @@ export function inWatchWindow(minutes: number, session: Session): boolean {
 
 export function evaluate(blob: PriceBlob | null, now: Date, today: string): WatchState {
   if (!blob) return { ...OK, stale: true };
-  const closedForToday = blob.final && blob.session?.date === today;
   const age = now.getTime() - Date.parse(blob.asOf);
-  let fallback = 0;
-  for (const q of Object.values(blob.quotes)) if (q.stale || q.src === 'finnhub') fallback++;
+  const sameDay = blob.session?.date === today;
+  // The closing snapshot is done, or its window has passed after at least one run.
+  const close = blob.session?.close;
+  const closeWindowOver = typeof close === 'number' && etNow(now).minutes > close + AFTER_CLOSE_MIN;
+  const closedForToday = sameDay && (blob.final || (blob.market === 'after-close' && closeWindowOver));
   return {
     stale: !closedForToday && !(age <= STALE_AFTER_MS),
-    alpacaDown: blob.alpacaFails >= ALPACA_DOWN_RUNS,
-    manyFallback: fallback > MANY_FALLBACK,
+    finnhubDown: (blob.finnhubFails ?? 0) >= FINNHUB_DOWN_RUNS,
+    // Only while the market is open: at the close every confirmation ages out.
+    manyOld: blob.market === 'open' && countOld(blob, now) > MANY_OLD,
     authError: !!blob.authError,
   };
 }
@@ -51,15 +57,15 @@ export function transitions(prev: WatchState, next: WatchState, blob: PriceBlob 
       ? (blob ? `Prices are stale: last update ${formatEt(blob.asOf)} (${ageMin} min ago).` : 'No prices stored yet.')
       : 'Prices are updating again.');
   }
-  if (next.alpacaDown !== prev.alpacaDown) {
-    out.push(next.alpacaDown
-      ? `Alpaca has failed ${blob?.alpacaFails ?? '?'} runs in a row; Finnhub is covering.`
-      : 'Alpaca is answering again.');
+  if (next.finnhubDown !== prev.finnhubDown) {
+    out.push(next.finnhubDown
+      ? `Finnhub returned no prices for ${blob?.finnhubFails ?? '?'} runs in a row.`
+      : 'Finnhub is answering again.');
   }
-  if (next.manyFallback !== prev.manyFallback) {
-    out.push(next.manyFallback
-      ? `More than ${MANY_FALLBACK} tickers are on Finnhub or stale.`
-      : 'Almost all tickers are back on Alpaca.');
+  if (next.manyOld !== prev.manyOld) {
+    out.push(next.manyOld
+      ? `More than ${MANY_OLD} tickers have no price confirmed in the last 5 minutes; trades in them are blocked.`
+      : 'Almost all tickers are confirmed within 5 minutes again.');
   }
   if (next.authError !== prev.authError) {
     out.push(next.authError && blob?.authError
@@ -106,7 +112,7 @@ export async function watchdog(env: Env, deps: Deps): Promise<WatchdogSummary> {
   let state = evaluate(blob, now, et.date);
   let refreshed = false;
   if (state.stale) {
-    await refresh(env, deps, { finnhub: false });
+    await refresh(env, deps, { budget: CATCHUP_PER_RUN });
     refreshed = true;
     blob = await readBlob(env.PRICES);
     state = evaluate(blob, deps.now(), et.date);

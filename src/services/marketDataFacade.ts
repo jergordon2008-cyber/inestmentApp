@@ -30,9 +30,9 @@ export { getAllSectors, getStocksBySector };
 export { LIVE_DATA_ENABLED, isLiveQuote };
 
 /**
- * One stock, asking the robot for that ticker first. The robot refetches it
- * from Alpaca if its price is more than 4 minutes old, so a stock a student
- * opens jumps the queue. Returns null only for an unknown symbol.
+ * One stock, asking the robot for that ticker first. Asking also makes it a
+ * priority ticker, so the robot refreshes it within a minute. Returns null
+ * only for an unknown symbol.
  */
 export async function fetchStock(symbol: string): Promise<Stock | null> {
   if (LIVE_DATA_ENABLED) await refreshQuote(symbol);
@@ -126,9 +126,9 @@ export function buildPositionPriceMap(stocks: Stock[]): Record<string, number> {
 
 /**
  * Data-source label for the price a screen is actually showing, derived from
- * that stock's own trade time and source: "Price as of 3:58 PM · Alpaca",
+ * that stock's own trade time and source: "Price as of 3:58 PM · Finnhub",
  * "Closing price · Oct 2 · Finnhub", "Saved price from …", or the snapshot
- * notice. See also PriceCredit for the shared "Prices from Alpaca/Finnhub".
+ * notice. See also PriceCredit for the shared "Prices from Finnhub".
  */
 export function getDataSourceLabel(stock?: Stock | null): string {
   return getStockPriceLabel(stock ?? null);

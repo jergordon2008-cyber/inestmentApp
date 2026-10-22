@@ -1,12 +1,14 @@
 /**
- * Workers KV access. Free plan: 1,000 writes a day, so the refresh writes one
- * key once per run (~200 a trading day) and the watchdog writes its own key
- * only when an alert state changes.
+ * Workers KV access. Free plan: 1,000 writes a day. The refresh writes one
+ * key once per run (~400 a trading day), the demand list is capped at 200
+ * writes a day (demand.ts), and the watchdog writes its own key only when an
+ * alert state changes.
  */
 import type { PriceBlob } from './types';
 
 export const PRICES_KEY = 'prices:v1';
 export const WATCHDOG_KEY = 'watchdog:v1';
+export const DEMAND_KEY = 'demand:v1';
 
 export async function readBlob(kv: KVNamespace, cacheTtl?: number): Promise<PriceBlob | null> {
   try {

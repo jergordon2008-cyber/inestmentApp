@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { clearHttpMemo, handleRequest, originAllowed, publicView } from '../src/http';
+import { activeDemand, clearDemandMemo, readDemand } from '../src/demand';
 import { clearSessionMemo, refresh } from '../src/refresh';
 import type { PriceBlob } from '../src/types';
-import { ALPACA_CAL, ALPACA_SNAP, alpacaBody, calendarRoute, fakeFetch, FakeKV, FINNHUB, finnhubBody, jsonRes, makeDeps, makeEnv } from './helpers';
+import { fakeFetch, FakeKV, finnhubWorld, makeDeps, makeEnv, seedAll } from './helpers';
 
 const OPEN = new Date('2026-10-07T18:00:00Z');
 const BASE = 'https://price-robot.example.workers.dev';
@@ -18,18 +19,12 @@ const fromApp = (path: string, init: RequestInit = {}) =>
 
 async function seeded(now = OPEN) {
   const kv = new FakeKV();
-  const trade = new Date(now.getTime() - 30_000).toISOString();
-  const f = fakeFetch({
-    [ALPACA_CAL]: calendarRoute(),
-    [ALPACA_SNAP]: url => jsonRes(alpacaBody(url, trade, price)),
-    [FINNHUB]: url => jsonRes(finnhubBody(price(url.searchParams.get('symbol') ?? ''), trade)),
-  });
-  await refresh(makeEnv(kv), makeDeps(f.fn, now));
+  await seedAll(kv, now, price);
   return kv;
 }
 
 describe('HTTP API', () => {
-  beforeEach(() => { clearSessionMemo(); clearHttpMemo(); });
+  beforeEach(() => { clearSessionMemo(); clearHttpMemo(); clearDemandMemo(); });
 
   it('GET /v1/prices returns every ticker without internal fields', async () => {
     const kv = await seeded();
@@ -38,8 +33,8 @@ describe('HTTP API', () => {
     expect(res.headers.get('Cache-Control')).toBe('public, max-age=30');
     const body = await res.json() as { quotes: Record<string, Record<string, unknown>>; asOf: string; retry?: unknown };
     expect(Object.keys(body.quotes)).toHaveLength(110);
-    expect(body.quotes.AAPL).toMatchObject({ p: 333.75, src: 'alpaca' });
-    expect(body.quotes.AAPL).not.toHaveProperty('chkAt');
+    expect(body.quotes.AAPL).toMatchObject({ p: 333.75, src: 'finnhub' });
+    expect(typeof body.quotes.AAPL!.at).toBe('string');
     expect(body).not.toHaveProperty('retry');
     expect(JSON.stringify(body)).not.toContain('test-');
   });
@@ -61,32 +56,44 @@ describe('HTTP API', () => {
     expect(res.status).toBe(503);
   });
 
-  it('GET /v1/quote serves a fresh stored quote without calling Alpaca', async () => {
+  it('GET /v1/quote serves the stored quote and makes no upstream call, even when it is old', async () => {
     const kv = await seeded();
     const f = fakeFetch({});
-    const res = await handleRequest(fromApp('/v1/quote/aapl'), envFor(kv), makeDeps(f.fn, new Date(OPEN.getTime() + 60_000)));
+    const res = await handleRequest(fromApp('/v1/quote/aapl'), envFor(kv), makeDeps(f.fn, new Date(OPEN.getTime() + 9 * 60_000)));
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ symbol: 'AAPL', onDemand: false, quote: { p: 333.75 } });
+    const body = await res.json() as Record<string, any>;
+    expect(body).toMatchObject({ symbol: 'AAPL', quote: { p: 333.75, src: 'finnhub' }, market: 'open' });
+    expect(Object.keys(body.quote).sort()).toEqual(['at', 'hi', 'lo', 'p', 'pc', 'src', 't']);
     expect(f.calls).toHaveLength(0);
   });
 
-  it('GET /v1/quote refetches a quote older than 4 minutes from Alpaca only', async () => {
+  it('GET /v1/quote marks the ticker as a priority ("recently opened")', async () => {
     const kv = await seeded();
-    const later = new Date(OPEN.getTime() + 5 * 60_000);
-    const f = fakeFetch({ [ALPACA_SNAP]: url => jsonRes(alpacaBody(url, new Date(later.getTime() - 5_000).toISOString(), () => 340)) });
-    const res = await handleRequest(fromApp('/v1/quote/AAPL'), envFor(kv), makeDeps(f.fn, later));
-    expect(await res.json()).toMatchObject({ onDemand: true, quote: { p: 340, src: 'alpaca' } });
-    expect(f.calls).toHaveLength(1);
-    expect(f.calls[0]).toContain('symbols=AAPL');
+    const waits: Promise<unknown>[] = [];
+    const ctx = { waitUntil: (p: Promise<unknown>) => { waits.push(p); }, passThroughOnException() {} } as unknown as ExecutionContext;
+    await handleRequest(fromApp('/v1/quote/ZM'), envFor(kv), makeDeps(fakeFetch({}).fn, OPEN), ctx);
+    await Promise.all(waits);
+    expect(activeDemand(await readDemand(kv as unknown as KVNamespace), OPEN)).toEqual(['ZM']);
   });
 
-  it('GET /v1/quote keeps the stored quote if Alpaca fails, and never calls Finnhub', async () => {
+  it('GET /v1/prices?held= marks holdings as priority; the response is the same cached one', async () => {
     const kv = await seeded();
-    const later = new Date(OPEN.getTime() + 5 * 60_000);
-    const f = fakeFetch({ [ALPACA_SNAP]: () => jsonRes({}, 500) });
-    const res = await handleRequest(fromApp('/v1/quote/AAPL'), envFor(kv), makeDeps(f.fn, later));
-    expect(await res.json()).toMatchObject({ onDemand: false, quote: { p: 333.75 } });
-    expect(f.calls.every(u => u.startsWith(ALPACA_SNAP))).toBe(true);
+    const waits: Promise<unknown>[] = [];
+    const ctx = { waitUntil: (p: Promise<unknown>) => { waits.push(p); }, passThroughOnException() {} } as unknown as ExecutionContext;
+    const a = await (await handleRequest(fromApp('/v1/prices?held=voo,DKNG,NOPE'), envFor(kv), makeDeps(fakeFetch({}).fn, OPEN), ctx)).text();
+    const b = await (await handleRequest(fromApp('/v1/prices'), envFor(kv), makeDeps(fakeFetch({}).fn, OPEN))).text();
+    await Promise.all(waits);
+    expect(a).toBe(b);
+    expect(activeDemand(await readDemand(kv as unknown as KVNamespace), OPEN).sort()).toEqual(['DKNG', 'VOO']);
+  });
+
+  it('a refused request records no demand', async () => {
+    const kv = await seeded();
+    const waits: Promise<unknown>[] = [];
+    const ctx = { waitUntil: (p: Promise<unknown>) => { waits.push(p); }, passThroughOnException() {} } as unknown as ExecutionContext;
+    await handleRequest(new Request(`${BASE}/v1/prices?held=VOO`), envFor(kv), makeDeps(fakeFetch({}).fn, OPEN), ctx);
+    await Promise.all(waits);
+    expect(await readDemand(kv as unknown as KVNamespace)).toBeNull();
   });
 
   it('GET /v1/quote maps SQ to XYZ and rejects unknown symbols', async () => {
@@ -96,22 +103,20 @@ describe('HTTP API', () => {
     expect((await handleRequest(fromApp('/v1/quote/FAKE'), envFor(kv), deps)).status).toBe(404);
   });
 
-  it('GET /v1/quote outside market hours makes no upstream call', async () => {
-    const kv = await seeded();
-    const night = new Date('2026-10-08T03:00:00Z');
-    const f = fakeFetch({});
-    const res = await handleRequest(fromApp('/v1/quote/AAPL'), envFor(kv), makeDeps(f.fn, night));
-    expect(res.status).toBe(200);
-    expect(f.calls).toHaveLength(0);
-  });
-
   it('GET /v1/health is 200 when fresh and 503 when stale in session', async () => {
     const kv = await seeded();
     const ok = await handleRequest(new Request(`${BASE}/v1/health`), makeEnv(kv), makeDeps(fakeFetch({}).fn, OPEN));
     expect(ok.status).toBe(200);
-    expect(await ok.json()).toMatchObject({ ok: true, counts: { alpaca: 110 } });
+    expect(await ok.json()).toMatchObject({ ok: true, finnhubOk: true, counts: { quotes: 110, confirmed: 110, old: 0 } });
     const stale = await handleRequest(new Request(`${BASE}/v1/health`), makeEnv(kv), makeDeps(fakeFetch({}).fn, new Date(OPEN.getTime() + 11 * 60_000)));
     expect(stale.status).toBe(503);
+  });
+
+  it('GET /v1/health counts confirmed tickers out of all 110, not out of those stored', async () => {
+    const kv = new FakeKV();
+    await refresh(makeEnv(kv), makeDeps(finnhubWorld(() => OPEN).fn, OPEN));
+    const res = await handleRequest(new Request(`${BASE}/v1/health`), makeEnv(kv), makeDeps(fakeFetch({}).fn, OPEN));
+    expect(await res.json()).toMatchObject({ counts: { quotes: 44, confirmed: 44, old: 66 } });
   });
 
   it('CORS: allowed origins get the header (exact or pattern); others are refused with none', async () => {
@@ -137,7 +142,7 @@ describe('HTTP API', () => {
 });
 
 describe('origin enforcement: /v1/prices and /v1/quote/* only answer allowed sites', () => {
-  beforeEach(() => { clearSessionMemo(); clearHttpMemo(); });
+  beforeEach(() => { clearSessionMemo(); clearHttpMemo(); clearDemandMemo(); });
   const deps = () => makeDeps(fakeFetch({}).fn, OPEN);
 
   it('an allowed origin passes, and gets the CORS header', async () => {
@@ -181,12 +186,12 @@ describe('origin enforcement: /v1/prices and /v1/quote/* only answer allowed sit
     expect((await handleRequest(new Request(`${BASE}/v1/quote/AAPL`, { headers: { Origin: 'https://evil.example.com' } }), envFor(kv), deps())).status).toBe(403);
   });
 
-  it('a refused request does no work: no KV read, no Alpaca call', async () => {
+  it('a refused request does no work: no KV read, no upstream call', async () => {
     const kv = await seeded();
     let reads = 0;
     const counting = { ...kv, get: async (...a: Parameters<FakeKV['get']>) => { reads++; return kv.get(...a); } };
     const f = fakeFetch({});
-    const later = makeDeps(f.fn, new Date(OPEN.getTime() + 5 * 60_000));     // old enough that an allowed request WOULD call Alpaca
+    const later = makeDeps(f.fn, new Date(OPEN.getTime() + 5 * 60_000));
     const env = envFor(counting as unknown as FakeKV);
     await handleRequest(new Request(`${BASE}/v1/quote/AAPL`), env, later);
     await handleRequest(new Request(`${BASE}/v1/prices`), env, later);
@@ -224,7 +229,7 @@ describe('origin enforcement: /v1/prices and /v1/quote/* only answer allowed sit
 });
 
 describe('localhost is a development setting only', () => {
-  beforeEach(() => { clearSessionMemo(); clearHttpMemo(); });
+  beforeEach(() => { clearSessionMemo(); clearHttpMemo(); clearDemandMemo(); });
   const deps = () => makeDeps(fakeFetch({}).fn, OPEN);
   const local = (origin: string, host = 'http://127.0.0.1:8787') =>
     new Request(`${host}/v1/prices`, { headers: { Origin: origin } });
@@ -264,7 +269,7 @@ describe('localhost is a development setting only', () => {
 });
 
 describe('/v1/prices serves only what the app reads', () => {
-  beforeEach(() => { clearSessionMemo(); clearHttpMemo(); });
+  beforeEach(() => { clearSessionMemo(); clearHttpMemo(); clearDemandMemo(); });
 
   // Mirrors the app's validators in src/services/priceRobotAdapter.ts
   // (isRobotPrices / isQuote) and what stockDataService does with a quote.
@@ -283,17 +288,17 @@ describe('/v1/prices serves only what the app reads', () => {
     expect(Object.keys(body).sort()).toEqual(['asOf', 'market', 'quotes', 'v']);
   });
 
-  it('every quote has only price, previous close, trade time, source and day high/low', async () => {
+  it('every quote has only price, previous close, trade time, source, day high/low and confirmation time', async () => {
     const kv = await seeded();
     const body = await (await handleRequest(fromApp('/v1/prices'), envFor(kv), makeDeps(fakeFetch({}).fn, OPEN))).json() as { quotes: Record<string, Record<string, unknown>> };
-    const allowed = new Set(['p', 'pc', 't', 'src', 'hi', 'lo']);
+    const allowed = new Set(['p', 'pc', 't', 'src', 'hi', 'lo', 'at']);
     for (const [sym, q] of Object.entries(body.quotes)) {
       for (const key of Object.keys(q)) expect(allowed.has(key), `${sym}.${key}`).toBe(true);
       expect(q).toHaveProperty('p');
       expect(q).toHaveProperty('t');
       expect(q).toHaveProperty('src');
     }
-    expect(body.quotes.AAPL).toMatchObject({ p: 333.75, src: 'alpaca' });
+    expect(body.quotes.AAPL).toMatchObject({ p: 333.75, src: 'finnhub' });
   });
 
   it('the payload still passes the app\'s own checks', async () => {
@@ -304,21 +309,21 @@ describe('/v1/prices serves only what the app reads', () => {
 
   it('a field the Worker adds later is not served until it is added to the allow-list', () => {
     const blob = {
-      v: 1, asOf: '2026-10-07T18:00:00.000Z', market: 'open', final: true, alpacaOk: true, alpacaFails: 2, retry: ['AAPL'],
-      session: { date: '2026-10-07', open: 570, close: 960, source: 'calendar' },
-      authError: { source: 'alpaca', status: 403, at: '2026-10-07T17:00:00.000Z' },
+      v: 1, asOf: '2026-10-07T18:00:00.000Z', market: 'open', final: true, closeFrom: null, finnhubOk: true, finnhubFails: 2,
+      session: { date: '2026-10-07', open: 570, close: 960, source: 'finnhub' },
+      authError: { source: 'finnhub', status: 403, at: '2026-10-07T17:00:00.000Z' },
       quotes: {
-        AAPL: { p: 333.75, pc: 333.69, t: '2026-10-07T17:59:30.000Z', src: 'alpaca', hi: 335, lo: 331, chk: 0.1, chkAt: '2026-10-07T17:58:00.000Z', stale: true, futureField: 'secret' },
+        AAPL: { p: 333.75, pc: 333.69, t: '2026-10-07T17:59:30.000Z', src: 'finnhub', hi: 335, lo: 331, at: '2026-10-07T17:59:40.000Z', futureField: 'secret' },
       },
     } as unknown as PriceBlob;
     const view = publicView(blob);
     expect(Object.keys(view).sort()).toEqual(['asOf', 'market', 'quotes', 'v']);
-    expect(view.quotes.AAPL).toEqual({ p: 333.75, pc: 333.69, t: '2026-10-07T17:59:30.000Z', src: 'alpaca', hi: 335, lo: 331 });
-    expect(JSON.stringify(view)).not.toMatch(/stale|futureField|secret|chk|retry|authError|session|final|alpacaOk/);
+    expect(view.quotes.AAPL).toEqual({ p: 333.75, pc: 333.69, t: '2026-10-07T17:59:30.000Z', src: 'finnhub', hi: 335, lo: 331, at: '2026-10-07T17:59:40.000Z' });
+    expect(JSON.stringify(view)).not.toMatch(/futureField|secret|finnhubFails|finnhubOk|authError|session|final|closeFrom/);
   });
 
   it('hi and lo are left out, not null, when the source gave none', () => {
-    const blob = { v: 1, asOf: '2026-10-07T18:00:00.000Z', market: 'open', quotes: { KO: { p: 70, pc: null, t: '2026-10-07T17:59:00.000Z', src: 'finnhub' } } } as unknown as PriceBlob;
-    expect(publicView(blob).quotes.KO).toEqual({ p: 70, pc: null, t: '2026-10-07T17:59:00.000Z', src: 'finnhub' });
+    const blob = { v: 1, asOf: '2026-10-07T18:00:00.000Z', market: 'open', quotes: { KO: { p: 70, pc: null, t: '2026-10-07T17:59:00.000Z', src: 'finnhub', at: '2026-10-07T17:59:10.000Z' } } } as unknown as PriceBlob;
+    expect(publicView(blob).quotes.KO).toEqual({ p: 70, pc: null, t: '2026-10-07T17:59:00.000Z', src: 'finnhub', at: '2026-10-07T17:59:10.000Z' });
   });
 });

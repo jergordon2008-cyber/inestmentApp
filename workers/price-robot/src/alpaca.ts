@@ -1,9 +1,14 @@
 /**
- * Alpaca Market Data (free Basic plan, IEX feed): the primary source.
+ * Alpaca Market Data (free Basic plan, IEX feed).
  *
- * One multi-symbol snapshot call returns every ticker. Display to our
- * students is covered by Alpaca's written approval (docs/PRICE-ROBOT-DESIGN.md §0).
+ * DISABLED: nothing in the live path imports this file (test/alpaca.test.ts
+ * checks). Alpaca declined to approve showing its data to our students, so
+ * the robot runs on Finnhub only (docs/PRICE-ROBOT-DESIGN.md §0). The adapter
+ * is kept, with its tests, in case that changes: one multi-symbol snapshot
+ * call returns every ticker, and its calendar knows holidays and early closes.
  */
+import type { Session } from './calendar';
+import { parseHhmm } from './calendar';
 import type { SourceQuote } from './types';
 
 export const ALPACA_DATA_BASE = 'https://data.alpaca.markets';
@@ -72,4 +77,32 @@ export function parseSnapshots(body: Record<string, Snapshot | null>): Record<st
     out[sym] = q;
   }
   return out;
+}
+
+/**
+ * Alpaca's calendar for one date. An empty answer means the market is closed
+ * that day (holiday). Returns null on any failure so the caller can fall back.
+ */
+export async function fetchAlpacaSession(
+  date: string,
+  keys: AlpacaKeys,
+  fetchFn: typeof fetch,
+): Promise<Session | null> {
+  try {
+    const res = await fetchFn(`${ALPACA_TRADING_BASE}/v2/calendar?start=${date}&end=${date}`, {
+      headers: alpacaHeaders(keys),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const body: unknown = await res.json();
+    if (!Array.isArray(body)) return null;
+    const day = body.find((d: { date?: string }) => d?.date === date) as { open?: string; close?: string } | undefined;
+    if (!day) return { date, open: null, close: null, source: 'alpaca' };
+    const open = parseHhmm(day.open ?? '');
+    const close = parseHhmm(day.close ?? '');
+    if (open === null || close === null) return null;
+    return { date, open, close, source: 'alpaca' };
+  } catch {
+    return null;
+  }
 }

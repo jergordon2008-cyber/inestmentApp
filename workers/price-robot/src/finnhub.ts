@@ -1,15 +1,24 @@
 /**
- * Finnhub (free plan): cross-check and fallback, one /quote call per ticker.
+ * Finnhub (free plan): the only live price source, one /quote call per ticker.
  *
- * Finnhub's written approval covers about 8 requests a minute
- * (docs/PRICE-ROBOT-DESIGN.md §0). FINNHUB_PER_RUN at one run every
- * 2 minutes keeps the robot at 7.5/min; nothing else in the Worker calls
- * Finnhub (the watchdog's catch-up run and on-demand quotes use Alpaca only).
+ * Budget: the free plan allows 60 calls a minute. The refresh runs once a
+ * minute and makes at most FINNHUB_PER_RUN calls (calendar included), so it
+ * stays at 45/min; the watchdog's rare catch-up adds at most CATCHUP_PER_RUN.
+ * Nothing else in the Worker calls Finnhub: /v1/quote and /v1/prices only
+ * read KV. That also keeps every run under the Free plan's 50 subrequests.
+ *
+ * Display: Finnhub has not approved showing its data to our students; both
+ * founders accepted that risk (docs/PRICE-ROBOT-DESIGN.md §0).
  */
 import type { SourceQuote } from './types';
 
 export const FINNHUB_BASE = 'https://finnhub.io/api/v1';
-export const FINNHUB_PER_RUN = 15;
+/** Finnhub calls per refresh run (one run a minute): 45/min, under the 60/min limit. */
+export const FINNHUB_PER_RUN = 45;
+/** Of those, at most this many go to tickers students hold or opened recently. */
+export const PRIORITY_SLOTS = 12;
+/** Finnhub calls for the watchdog's catch-up run: 45 + 10 stays under 60/min. */
+export const CATCHUP_PER_RUN = 10;
 const CONCURRENCY = 5;
 
 export type FinnhubResult = { ok: true; q: SourceQuote } | { ok: false; status: number };

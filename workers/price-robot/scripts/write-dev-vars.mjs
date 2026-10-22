@@ -2,7 +2,7 @@
 // so the API keys never have to be typed into a file. Prints names only.
 import { writeFileSync } from 'node:fs';
 
-const required = ['ALPACA_KEY_ID', 'ALPACA_SECRET_KEY', 'FINNHUB_KEY'];
+const required = ['FINNHUB_KEY'];
 const optional = ['ALERT_URL', 'DEV_FORCE_OPEN', 'ALLOWED_ORIGINS'];
 // Dev-only settings, always written here: this file is git-ignored and
 // `wrangler deploy` never uploads it, so they can't reach the deployed Worker.

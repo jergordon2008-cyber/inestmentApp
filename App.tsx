@@ -18,7 +18,7 @@ import {
 } from './src/services/firestoreSync';
 import { initAnalyticsLifecycle, startNewSession, logScreenView, flushScreenBuffer } from './src/services/analyticsService';
 import { useTradeJournalStore, JournalEntry } from './src/services/tradeJournalStore';
-import { startPriceRobot, stopPriceRobot } from './src/services/priceRobotAdapter';
+import { setHeldSymbolsProvider, startPriceRobot, stopPriceRobot } from './src/services/priceRobotAdapter';
 import { TourGuide } from './src/components/TourGuide';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { reconcilePortfolio, savePortfolioBackups, ReconcileResult, isSameOwner } from './src/services/portfolioReconcile';
@@ -526,8 +526,13 @@ function AppContent() {
   }, [uid, journalEntries, journalReadyFor, journalOwner]);
 
   // Prices from the price robot: saved prices at once, then the robot every
-  // 2 minutes (no-op without EXPO_PUBLIC_PRICE_API_URL).
-  useEffect(() => { startPriceRobot(); return stopPriceRobot; }, []);
+  // minute (no-op without EXPO_PUBLIC_PRICE_API_URL). Each poll names this
+  // student's holdings so the robot refreshes them first.
+  useEffect(() => {
+    setHeldSymbolsProvider(() => usePortfolioStore.getState().portfolio?.positions.map(p => p.symbol) ?? []);
+    startPriceRobot();
+    return stopPriceRobot;
+  }, []);
 
   // Global portfolio price refresh — keeps HomeScreen balance live even when PortfolioScreen isn't open
   useEffect(() => {

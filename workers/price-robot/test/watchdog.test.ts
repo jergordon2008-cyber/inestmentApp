@@ -1,27 +1,26 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { clearDemandMemo } from '../src/demand';
 import { PRICES_KEY, WATCHDOG_KEY } from '../src/kv';
 import { clearSessionMemo, refresh } from '../src/refresh';
 import type { PriceBlob } from '../src/types';
 import { evaluate, sendAlert, transitions, watchdog, type WatchState } from '../src/watchdog';
-import { ALPACA_CAL, ALPACA_SNAP, alpacaBody, calendarRoute, fakeFetch, FakeKV, FINNHUB, finnhubBody, jsonRes, makeDeps, makeEnv } from './helpers';
+import { fakeFetch, FakeKV, FINNHUB, FINNHUB_HOLIDAYS, finnhubWorld, holidaysRoute, makeDeps, makeEnv, seedAll } from './helpers';
 
 const OPEN = new Date('2026-10-07T18:00:00Z'); // Wed 14:00 ET
 const ALERT = 'https://ntfy.sh/test-topic';
-const OK: WatchState = { stale: false, alpacaDown: false, manyFallback: false, authError: false };
+const OK: WatchState = { stale: false, finnhubDown: false, manyOld: false, authError: false };
+const min = (d: Date, m: number) => new Date(d.getTime() + m * 60_000);
 
-function world(now: () => Date, opts: { alpacaStatus?: number } = {}) {
+function world(now: () => Date) {
   const alerts: string[] = [];
-  const f = fakeFetch({
-    [ALPACA_CAL]: calendarRoute(),
-    [ALPACA_SNAP]: url => (opts.alpacaStatus ? jsonRes({}, opts.alpacaStatus) : jsonRes(alpacaBody(url, new Date(now().getTime() - 30_000).toISOString()))),
-    [FINNHUB]: () => jsonRes(finnhubBody(100, now().toISOString())),
+  const f = finnhubWorld(now, () => 100, {
     [ALERT]: async (_url, init) => { alerts.push(String(init?.body)); return new Response('ok'); },
   });
   return { f, alerts };
 }
 
 describe('watchdog', () => {
-  beforeEach(() => clearSessionMemo());
+  beforeEach(() => { clearSessionMemo(); clearDemandMemo(); });
 
   it('does nothing outside the watch window', async () => {
     const kv = new FakeKV();
@@ -29,10 +28,8 @@ describe('watchdog', () => {
     const w = world(() => night);
     const s = await watchdog(makeEnv(kv, { ALERT_URL: ALERT }), makeDeps(w.f.fn, night));
     expect(s.checked).toBe(false);
-    expect(w.alerts).toHaveLength(0);
     expect(w.f.calls).toHaveLength(0); // not even the calendar
-    const sunday = new Date('2026-10-04T16:00:00Z');
-    await watchdog(makeEnv(kv, { ALERT_URL: ALERT }), makeDeps(w.f.fn, sunday));
+    await watchdog(makeEnv(kv, { ALERT_URL: ALERT }), makeDeps(w.f.fn, new Date('2026-10-04T16:00:00Z'))); // Sunday
     expect(w.f.calls).toHaveLength(0);
   });
 
@@ -40,7 +37,7 @@ describe('watchdog', () => {
     const kv = new FakeKV();
     const thanksgiving = new Date('2026-11-26T17:00:00Z');
     const alerts: string[] = [];
-    const f = fakeFetch({ [ALPACA_CAL]: calendarRoute('09:30', '16:00', true), [ALERT]: () => { alerts.push('x'); return new Response('ok'); } });
+    const f = fakeFetch({ [FINNHUB_HOLIDAYS]: holidaysRoute(), [ALERT]: () => { alerts.push('x'); return new Response('ok'); } });
     const s = await watchdog(makeEnv(kv, { ALERT_URL: ALERT }), makeDeps(f.fn, thanksgiving));
     expect(s.checked).toBe(false);
     expect(alerts).toHaveLength(0);
@@ -48,77 +45,73 @@ describe('watchdog', () => {
 
   it('fresh prices: no alert, no KV write', async () => {
     const kv = new FakeKV();
-    let now = OPEN;
+    await seedAll(kv, OPEN);
+    const now = min(OPEN, 1);
     const w = world(() => now);
-    await refresh(makeEnv(kv), makeDeps(w.f.fn, () => now));
-    now = new Date(OPEN.getTime() + 4 * 60_000);
     const puts = kv.puts;
-    const s = await watchdog(makeEnv(kv, { ALERT_URL: ALERT }), makeDeps(w.f.fn, () => now));
+    const s = await watchdog(makeEnv(kv, { ALERT_URL: ALERT }), makeDeps(w.f.fn, now));
     expect(s).toMatchObject({ checked: true, refreshed: false, alerts: [] });
     expect(kv.puts).toBe(puts);
   });
 
-  it('stale > 10 min: tries one Alpaca-only refresh, and stays quiet if that fixes it', async () => {
+  it('stale > 10 min: one catch-up run of at most 10 Finnhub calls; no "stale" alert if that fixes it', async () => {
     const kv = new FakeKV();
-    let now = OPEN;
+    await seedAll(kv, OPEN);
+    const now = min(OPEN, 11);
     const w = world(() => now);
-    await refresh(makeEnv(kv), makeDeps(w.f.fn, () => now));
-    now = new Date(OPEN.getTime() + 11 * 60_000);
-    w.f.calls.length = 0;
-    const s = await watchdog(makeEnv(kv, { ALERT_URL: ALERT }), makeDeps(w.f.fn, () => now));
+    const s = await watchdog(makeEnv(kv, { ALERT_URL: ALERT }), makeDeps(w.f.fn, now));
     expect(s.refreshed).toBe(true);
     expect(s.state.stale).toBe(false);
-    expect(w.f.calls.filter(u => u.startsWith(FINNHUB))).toHaveLength(0);
-    expect(w.alerts).toHaveLength(0);
+    expect(w.f.calls.filter(u => u.startsWith(FINNHUB)).length).toBeLessThanOrEqual(10);
+    // 10 calls can't reconfirm 110 tickers: the honest alert is that trades are blocked.
+    expect(w.alerts).toHaveLength(1);
+    expect(w.alerts[0]).not.toMatch(/stale/);
+    expect(w.alerts[0]).toMatch(/no price confirmed in the last 5 minutes/);
   });
 
   it('alerts once when prices stay stale, once when they recover', async () => {
     const kv = new FakeKV();
-    let now = OPEN;
-    const good = world(() => now);
-    await refresh(makeEnv(kv), makeDeps(good.f.fn, () => now));
-
-    // Alpaca down and Finnhub refusing: the catch-up refresh can't help.
+    await seedAll(kv, OPEN);
     const alerts: string[] = [];
     const down = fakeFetch({
-      [ALPACA_CAL]: calendarRoute(),
-      [ALPACA_SNAP]: () => { throw new Error('network'); },
+      [FINNHUB]: () => { throw new Error('network'); },
       [ALERT]: async (_u, init) => { alerts.push(String(init?.body)); return new Response('ok'); },
     });
-    // KV write fails too, so the blob really stays old.
     const env = makeEnv(kv, { ALERT_URL: ALERT });
-    now = new Date(OPEN.getTime() + 12 * 60_000);
-    kv.failNextPuts = 2;
+    let now = min(OPEN, 12);
+    kv.failNextPuts = 2; // the catch-up can't write either, so the blob really stays old
     await watchdog(env, makeDeps(down.fn, () => now));
     expect(alerts).toHaveLength(1);
     expect(alerts[0]).toMatch(/stale.*14:00 ET/);
 
-    now = new Date(OPEN.getTime() + 17 * 60_000);
+    now = min(OPEN, 17);
     kv.failNextPuts = 2;
     await watchdog(env, makeDeps(down.fn, () => now));
     expect(alerts).toHaveLength(1); // no repeat
 
-    now = new Date(OPEN.getTime() + 22 * 60_000);
-    await refresh(makeEnv(kv), makeDeps(world(() => now).f.fn, () => now));
+    now = min(OPEN, 22);
+    await seedAll(kv, now);
     await watchdog(env, makeDeps(down.fn, () => now));
-    expect(alerts).toHaveLength(2);
-    expect(alerts[1]).toMatch(/updating again/);
+    expect(alerts.at(-1)).toMatch(/updating again/);
     expect(kv.json<WatchState>(WATCHDOG_KEY)).toEqual(OK);
   });
 
   it('after the closing snapshot, an old blob is not stale', () => {
-    const blob = { v: 1, asOf: '2026-10-07T20:02:00Z', final: true, session: { date: '2026-10-07' }, quotes: {}, alpacaFails: 0, authError: null } as unknown as PriceBlob;
+    const blob = { v: 1, asOf: '2026-10-07T20:02:00Z', final: true, market: 'after-close', session: { date: '2026-10-07', close: 960 }, quotes: {}, finnhubFails: 0, authError: null } as unknown as PriceBlob;
     expect(evaluate(blob, new Date('2026-10-07T20:14:00Z'), '2026-10-07').stale).toBe(false);
+    // Not final (some closing prices missing), but the closing window is over: not stale either.
+    expect(evaluate({ ...blob, final: false }, new Date('2026-10-07T20:14:00Z'), '2026-10-07').stale).toBe(false);
   });
 
-  it('reports Alpaca down, many fallbacks and refused keys', () => {
-    const quotes = Object.fromEntries(Array.from({ length: 11 }, (_, i) => [`S${i}`, { p: 1, pc: 1, t: '', src: 'finnhub' }]));
-    const blob = { v: 1, asOf: OPEN.toISOString(), final: false, session: null, quotes, alpacaFails: 3, authError: { source: 'finnhub', status: 401, at: '' } } as unknown as PriceBlob;
+  it('reports Finnhub down, many unconfirmed tickers and refused keys', () => {
+    const quotes = Object.fromEntries(Array.from({ length: 110 }, (_, i) => [`S${i}`, { p: 1, pc: 1, t: '', src: 'finnhub', at: '' }]));
+    const blob = { v: 1, asOf: OPEN.toISOString(), market: 'open', final: false, session: null, quotes, finnhubFails: 3, authError: { source: 'finnhub', status: 401, at: '' } } as unknown as PriceBlob;
     const state = evaluate(blob, OPEN, '2026-10-07');
-    expect(state).toEqual({ stale: false, alpacaDown: true, manyFallback: true, authError: true });
+    expect(state).toEqual({ stale: false, finnhubDown: true, manyOld: true, authError: true });
     const msgs = transitions(OK, state, blob, OPEN);
     expect(msgs).toHaveLength(3);
     expect(msgs.join(' ')).toMatch(/finnhub refused the API key \(HTTP 401\)/);
+    expect(msgs.join(' ')).toMatch(/trades in them are blocked/);
   });
 
   it('sends Discord webhooks as JSON and ntfy as plain text', async () => {
@@ -140,8 +133,7 @@ describe('watchdog', () => {
 describe('blob written by refresh', () => {
   it('is what the watchdog reads', async () => {
     const kv = new FakeKV();
-    const w = world(() => OPEN);
-    await refresh(makeEnv(kv), makeDeps(w.f.fn, OPEN));
+    await refresh(makeEnv(kv), makeDeps(world(() => OPEN).f.fn, OPEN));
     expect(kv.json<PriceBlob>(PRICES_KEY)?.asOf).toBe(OPEN.toISOString());
   });
 });

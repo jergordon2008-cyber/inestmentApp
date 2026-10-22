@@ -28,7 +28,7 @@ export default {
       if (summary.checked) console.log(JSON.stringify({ job: 'watchdog', ...summary }));
       return;
     }
-    const summary = await refresh(env, deps, { finnhub: true });
+    const summary = await refresh(env, deps);
     console.log(JSON.stringify({ job: 'refresh', ...summary }));
   },
 } satisfies ExportedHandler<Env>;

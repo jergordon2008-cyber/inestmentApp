@@ -1,7 +1,7 @@
 /**
  * One small line next to prices: when they're from ("Prices as of 3:58 PM",
  * "Closing prices · Oct 2", "Saved prices from …") and the credit "Prices
- * from Alpaca/Finnhub" that both providers' display approvals ask for.
+ * from Finnhub" naming the source.
  *
  * Pass `label` to show a stock's own label (e.g. on the stock page) instead
  * of the shared one. In local simulation or on the January snapshot there's

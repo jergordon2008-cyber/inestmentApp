@@ -27,6 +27,7 @@ import {
   joinChallenge, getChallengeParticipantCounts, hasJoinedChallenge,
 } from '../services/firestoreSync';
 import { showAlert } from '../utils/alert';
+import { publicDisplayName } from '../utils/publicName';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -266,7 +267,7 @@ export function SocialScreen({ onClassroomPress, onCommunityPress, onChallengesP
                 <Text style={s.activityAvatar}>{item.action === 'buy' ? '📈' : '📉'}</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={[s.activityText, { color: theme.colors.textPrimary }]}>
-                    <Text style={{ fontWeight: '700' }}>{item.displayName}</Text>
+                    <Text style={{ fontWeight: '700' }}>{publicDisplayName(item.displayName)}</Text>
                     {' '}{item.action === 'buy' ? 'bought' : 'sold'}{' '}
                     <Text style={{ fontWeight: '700', color: theme.colors.primary }}>{item.symbol}</Text>
                   </Text>

@@ -24,7 +24,7 @@ export type Phase = 'closed' | 'open' | 'after-close';
 export const PRE_OPEN_MIN = 1;
 /**
  * Runs this many minutes after the close take the closing snapshot. At 45
- * tickers a run it takes 3 runs to cover all 110; the rest is slack for a
+ * tickers a run it takes 3 runs to cover all 109; the rest is slack for a
  * late or failed run.
  */
 export const AFTER_CLOSE_MIN = 6;

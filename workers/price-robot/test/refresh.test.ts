@@ -60,10 +60,10 @@ describe('refresh', () => {
     expect(s.finnhubCalls).toBe(45);
   });
 
-  it('covers all 110 tickers in 3 runs', async () => {
+  it('covers all 109 tickers in 3 runs', async () => {
     const kv = new FakeKV();
     for (let i = 0; i < 3; i++) await refresh(makeEnv(kv), makeDeps(finnhubWorld(() => min(OPEN, i)).fn, min(OPEN, i)));
-    expect(Object.keys(kv.json<PriceBlob>(PRICES_KEY)!.quotes)).toHaveLength(110);
+    expect(Object.keys(kv.json<PriceBlob>(PRICES_KEY)!.quotes)).toHaveLength(109);
   });
 
   it('before the open: no price calls; stores the new day once', async () => {

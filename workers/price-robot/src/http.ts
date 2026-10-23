@@ -211,7 +211,7 @@ export async function handleRequest(req: Request, env: Env, deps: Deps, ctx?: Ex
       final: blob?.final ?? false,
       finnhubOk: blob?.finnhubOk ?? null,
       authError: blob?.authError ? { source: blob.authError.source, status: blob.authError.status } : null,
-      // Out of all 110: confirmed = a Finnhub price within the last 5 minutes (tradable).
+      // Out of all 109 (SYMBOLS): confirmed = a Finnhub price within the last 5 minutes (tradable).
       counts: { quotes, confirmed: SYMBOLS.length - old, old },
     }, ok ? 200 : 503, 0), req, env);
   }

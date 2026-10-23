@@ -63,7 +63,7 @@ describe('watchdog', () => {
     expect(s.refreshed).toBe(true);
     expect(s.state.stale).toBe(false);
     expect(w.f.calls.filter(u => u.startsWith(FINNHUB)).length).toBeLessThanOrEqual(10);
-    // 10 calls can't reconfirm 110 tickers: the honest alert is that trades are blocked.
+    // 10 calls can't reconfirm 109 tickers: the honest alert is that trades are blocked.
     expect(w.alerts).toHaveLength(1);
     expect(w.alerts[0]).not.toMatch(/stale/);
     expect(w.alerts[0]).toMatch(/no price confirmed in the last 5 minutes/);

@@ -83,11 +83,11 @@ describe('planRun', () => {
 });
 
 /**
- * Refresh frequency for the real 110 tickers: simulate a trading hour of
+ * Refresh frequency for the real 109 tickers: simulate a trading hour of
  * one-minute runs and measure the longest gap between two confirmations of
  * each ticker. These numbers are the ones quoted in the design doc (§3).
  */
-describe('refresh frequency (110 tickers, 45 calls a minute)', () => {
+describe('refresh frequency (109 tickers, 45 calls a minute)', () => {
   function simulate(priority: string[], runs = 60) {
     let blob: PriceBlob | null = null;
     const last: Record<string, number> = {};
@@ -113,7 +113,7 @@ describe('refresh frequency (110 tickers, 45 calls a minute)', () => {
     expect(countOld(blob, end)).toBe(0);
   });
 
-  it('12 priority tickers: those every minute, the other 98 at most every 3 minutes', () => {
+  it('12 priority tickers: those every minute, the other 97 at most every 3 minutes', () => {
     const pri = SYMBOLS.slice(-12);
     const { gaps } = simulate(pri);
     expect(maxGap(gaps, pri)).toBe(1);
@@ -127,7 +127,7 @@ describe('refresh frequency (110 tickers, 45 calls a minute)', () => {
     expect(countOld(blob, end)).toBe(0);
   });
 
-  it('all 110 sent as priority (a misbehaving client) changes nothing for the others', () => {
+  it('all 109 sent as priority (a misbehaving client) changes nothing for the others', () => {
     const { gaps } = simulate([...SYMBOLS]);
     expect(maxGap(gaps, SYMBOLS)).toBeLessThanOrEqual(3);
   });

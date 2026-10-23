@@ -36,14 +36,14 @@
   - 45 → 88 → 109 tickers stored;
   - the ticker opened in the app (`ZM`) was fetched first in every run;
   - `/v1/prices` without an `Origin` answered 403.
-- **`EA` gets no price:** Finnhub answers `c: 0` (no quote data) while its company profile still exists. EA stays on the January snapshot and can't be traded; whether to keep it in the stock list is an open decision.
+- **`EA` gets no price:** Finnhub answers `c: 0` (no quote data) while its company profile still exists. Decision: EA is retired from the app's tradable list (`RETIRED_SYMBOLS` in the app, `RETIRED` in `symbols.ts`), so the robot no longer fetches it and `/v1/quote/EA` answers 404. Existing EA positions keep their last known price and can still be sold at it.
 - **`SQ` → `XYZ`:** `SQ` last traded on 2025-01-17 (Block changed its ticker). The robot serves `XYZ` and maps `SQ` to it.
 
 **Accounts:** Cloudflare (free, no card) is owned by Jeremiah and managed with his agreement. The Finnhub key for the robot is new and server-only.
 
 ## 2. Tickers supported
 
-- **Exactly the app's 110 tickers** (`stockDatabase` in `stockDataService.ts`), with `SQ` served as `XYZ`. A test fails if the Worker's list and the app's drift apart.
+- **Exactly the app's 109 tradable tickers** (`stockDatabase` in `stockDataService.ts`, 110 rows, minus the retired `EA`), with `SQ` served as `XYZ`. A test fails if the Worker's list and the app's drift apart.
 - The Worker rejects any other symbol (404).
 
 ## 3. How it works
@@ -76,19 +76,19 @@ Firebase is unchanged (Spark plan); prices never go through Firestore.
 3. **Store:** each answered ticker gets the price, the trade time `t` and the confirmation time `at`. An answer with an older trade time than the stored one is ignored. Unanswered tickers keep their last price and `at`.
 4. **One KV write** of the merged blob (retried once if it fails).
 
-### How often each of the 110 tickers is refreshed
+### How often each of the 109 tickers is refreshed
 Simulated over a full trading day (390 one-minute runs, `test/merge.test.ts` checks the bounds):
 
 | Priority tickers (held or opened) | Priority tickers refreshed | Every other ticker refreshed |
 |---|---|---|
 | 0 | — | every 2.4 min on average, **at most 3 min** |
 | 5 | **every minute** | every 2.6 min on average, at most 3 min |
-| 12 | **every minute** | every 3.0 min on average, at most 3 min |
+| 12 | **every minute** | every 2.9 min on average, at most 3 min |
 | 20 | every 1.7 min on average, at most 2 min | every 2.7 min on average, at most 3 min |
-| 40 | every 2.0 min on average, at most 3 min | every 2.8 min on average, at most 3 min |
-| all 110 (a misbehaving client) | every 2.4 min on average, at most 3 min | — |
+| 40 | every 2.0 min on average, at most 2 min | every 2.8 min on average, at most 3 min |
+| all 109 (a misbehaving client) | every 2.4 min on average, at most 3 min | — |
 
-So **every ticker is reconfirmed at least every 3 minutes** while Finnhub answers, whatever the priority list holds; up to 12 held/opened tickers every minute. Exceptions: a ticker Finnhub has no data for (today `EA`), and runs Finnhub refuses (429/5xx), which the watchdog reports.
+So **every ticker is reconfirmed at least every 3 minutes** while Finnhub answers, whatever the priority list holds; up to 12 held/opened tickers every minute. Exceptions: a ticker Finnhub has no data for (none today; `EA` was retired for this), and runs Finnhub refuses (429/5xx), which the watchdog reports.
 
 ### Priority list (`demand:v1`)
 - Requests only note tickers in the Worker's memory. At most once a minute, each Worker instance merges them into KV, after sending the response.
@@ -108,7 +108,7 @@ So **every ticker is reconfirmed at least every 3 minutes** while Finnhub answer
 ### HTTP endpoints (read-only; prices only for the app's own sites; none calls Finnhub)
 - **`GET /v1/prices`:** all quotes, trimmed to what the app reads: `v`, `asOf`, `market` and, per ticker, `p`, `pc`, `t`, `src`, `hi`, `lo`, `at` (an allow-list in `publicView`, so a field added later isn't served by accident). `?held=` (up to 40 known tickers) feeds the priority list and doesn't change the answer. Cached for 30 s in the Worker's memory, so KV is read about twice a minute per Worker instance, not once per student.
 - **`GET /v1/quote/:SYM`:** one ticker from KV, cached 15 s. **No upstream call** (before: an on-demand Alpaca fetch): asking makes the ticker a priority, so the next run, within a minute, refreshes it. That keeps Finnhub at a fixed 45/min whatever the traffic. Unknown symbols get 404; `SQ` answers as `XYZ`.
-- **`GET /v1/health`:** age, `finnhubOk`, refused-key status, and `counts` (`quotes` stored, `confirmed` = Finnhub price within 5 minutes, out of 110, `old`); **503** when prices are stale during the session. Always open, so the watchdog and a person can check it.
+- **`GET /v1/health`:** age, `finnhubOk`, refused-key status, and `counts` (`quotes` stored, `confirmed` = Finnhub price within 5 minutes, out of 109, `old`); **503** when prices are stale during the session. Always open, so the watchdog and a person can check it.
 - **Origin check (`/v1/prices` and `/v1/quote/*`):** unchanged. **403** unless the request's `Origin` header is in `ALLOWED_ORIGINS` (exact, or with `*` inside a hostname for Vercel preview URLs), and also when there is no `Origin` at all. The check runs first, so a refused request reads no KV and records no priority. `localhost` is **not** allowed on the deployed Worker; `npm run dev` adds it through `DEV_ALLOW_LOCALHOST` in the git-ignored `.dev.vars`.
   - **What it stops:** other websites using the API; a person opening or sharing the URL in a browser; curl and scripts that send no `Origin`.
   - **What it doesn't stop:** a script that sends `Origin: <an allowed site>`. It is not authentication.
@@ -187,7 +187,7 @@ Wait a minute between manual runs: each one uses 45 of Finnhub's 60 calls a minu
 | `refresh.ts` | Cron run |
 | `watchdog.ts` | Staleness checks and alerts |
 | `http.ts` | Endpoints |
-| `symbols.ts` | The 110 tickers and the `SQ` alias |
+| `symbols.ts` | The 109 tickers, the retired `EA` and the `SQ` alias |
 
 **Worker tests** (vitest, fake APIs; no keys, no network): 100 tests, covering:
 - ≤ 45 Finnhub calls and ≤ 50 subrequests per run; no Alpaca call ever; the key never in a URL;
@@ -212,7 +212,7 @@ Wait a minute between manual runs: each one uses 45 of Finnhub's 60 calls a minu
 | **Finnhub display not approved** | Finnhub may revoke the key or ask us to stop | Accepted by both founders (§0); app-only, origin-restricted, credited; watchdog alerts on a refused key |
 | Finnhub is the only source | A Finnhub outage or refused key means no live prices | App falls back to saved prices, labelled; trades blocked; ntfy alert |
 | 45/min near the 60/min limit | A burst over 60 gets 429s | Fixed budget in code; no endpoint calls Finnhub; catch-up limited to 10; a 429 stops that run's batch |
-| A ticker with no Finnhub data (`EA` today) | Stays on the snapshot, untradable | Visible in `/v1/health` (`old`); keep or remove `EA` is an open decision |
+| A ticker with no Finnhub data (`EA`, now retired) | Retired in the app: not buyable, held shares sell at their last price | `/v1/health` (`old`) shows any new one |
 | Prices up to 3 min old between reconfirmations | The "Prices as of" time is the last run, not every ticker's | The stock page shows each stock's own trade time; trades use the per-ticker 5-minute rule |
 | KV is eventually consistent (up to ~60 s between regions) | A student may see the previous run; priority list a minute late | Within the 5-minute rule; labels show real times |
 | Over ~1,650 student-hours/day | Worker errors until the daily reset | App falls back to saved prices; Workers Paid is $5/mo with a card (Jeremiah's call) |

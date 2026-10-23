@@ -32,7 +32,7 @@ describe('HTTP API', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('Cache-Control')).toBe('public, max-age=30');
     const body = await res.json() as { quotes: Record<string, Record<string, unknown>>; asOf: string; retry?: unknown };
-    expect(Object.keys(body.quotes)).toHaveLength(110);
+    expect(Object.keys(body.quotes)).toHaveLength(109);
     expect(body.quotes.AAPL).toMatchObject({ p: 333.75, src: 'finnhub' });
     expect(typeof body.quotes.AAPL!.at).toBe('string');
     expect(body).not.toHaveProperty('retry');
@@ -101,22 +101,24 @@ describe('HTTP API', () => {
     const deps = makeDeps(fakeFetch({}).fn, OPEN);
     expect(await (await handleRequest(fromApp('/v1/quote/SQ'), envFor(kv), deps)).json()).toMatchObject({ symbol: 'XYZ' });
     expect((await handleRequest(fromApp('/v1/quote/FAKE'), envFor(kv), deps)).status).toBe(404);
+    // Retired in the app (RETIRED): not fetched, so not served.
+    expect((await handleRequest(fromApp('/v1/quote/EA'), envFor(kv), deps)).status).toBe(404);
   });
 
   it('GET /v1/health is 200 when fresh and 503 when stale in session', async () => {
     const kv = await seeded();
     const ok = await handleRequest(new Request(`${BASE}/v1/health`), makeEnv(kv), makeDeps(fakeFetch({}).fn, OPEN));
     expect(ok.status).toBe(200);
-    expect(await ok.json()).toMatchObject({ ok: true, finnhubOk: true, counts: { quotes: 110, confirmed: 110, old: 0 } });
+    expect(await ok.json()).toMatchObject({ ok: true, finnhubOk: true, counts: { quotes: 109, confirmed: 109, old: 0 } });
     const stale = await handleRequest(new Request(`${BASE}/v1/health`), makeEnv(kv), makeDeps(fakeFetch({}).fn, new Date(OPEN.getTime() + 11 * 60_000)));
     expect(stale.status).toBe(503);
   });
 
-  it('GET /v1/health counts confirmed tickers out of all 110, not out of those stored', async () => {
+  it('GET /v1/health counts confirmed tickers out of all 109, not out of those stored', async () => {
     const kv = new FakeKV();
     await refresh(makeEnv(kv), makeDeps(finnhubWorld(() => OPEN).fn, OPEN));
     const res = await handleRequest(new Request(`${BASE}/v1/health`), makeEnv(kv), makeDeps(fakeFetch({}).fn, OPEN));
-    expect(await res.json()).toMatchObject({ counts: { quotes: 44, confirmed: 44, old: 66 } });
+    expect(await res.json()).toMatchObject({ counts: { quotes: 44, confirmed: 44, old: 65 } });
   });
 
   it('CORS: allowed origins get the header (exact or pattern); others are refused with none', async () => {

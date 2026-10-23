@@ -1,8 +1,8 @@
 /**
- * The tickers the robot refreshes: exactly the app's stock list
- * (`stockDatabase` in src/services/stockDataService.ts). Students can't open
- * or trade anything else, so the rotation covers every holding.
- * test/symbols.test.ts fails if this list and the app's drift apart.
+ * The tickers the robot refreshes: exactly the app's tradable stock list
+ * (`stockDatabase` in src/services/stockDataService.ts, minus RETIRED below).
+ * Students can't open or trade anything else, so the rotation covers every
+ * holding. test/symbols.test.ts fails if this list and the app's drift apart.
  *
  * Plain TypeScript with no Worker types, so the app's tests can import it too.
  */
@@ -15,10 +15,20 @@ export const SYMBOLS: readonly string[] = [
   'COP', 'SLB', 'CAT', 'BA', 'HON', 'GE', 'UPS', 'LMT', 'SPY', 'VOO',
   'QQQ', 'VTI', 'IWM', 'GLD', 'BND', 'VNQ', 'ARKK', 'AMT', 'EQIX', 'PLD',
   'O', 'ENPH', 'FSLR', 'NEE', 'RKLB', 'ASTS', 'RTX', 'NOC', 'CRWD', 'PANW',
-  'ZS', 'COIN', 'XYZ', 'HOOD', 'SOFI', 'AFRM', 'RBLX', 'EA', 'TTWO', 'SPOT',
+  'ZS', 'COIN', 'XYZ', 'HOOD', 'SOFI', 'AFRM', 'RBLX', 'TTWO', 'SPOT',
   'PINS', 'SNAP', 'ROKU', 'TTD', 'ABNB', 'DASH', 'LYFT', 'NOW', 'DDOG', 'ZM',
   'DOCU', 'BABA', 'MELI', 'NVO', 'MSTR', 'IBIT', 'RIVN', 'LCID', 'HIMS', 'DKNG',
 ];
+
+/**
+ * Tickers still in the app's stockDatabase that the robot does NOT fetch,
+ * because the app no longer trades them (RETIRED_SYMBOLS in
+ * src/services/stockDataService.ts — keep the two in sync). Existing
+ * positions keep their last price in the app; /v1/quote/EA answers 404.
+ *
+ * EA: Finnhub answers `c: 0` (no quote data), so a call each run was wasted.
+ */
+export const RETIRED: readonly string[] = ['EA'];
 
 /**
  * Old tickers still found in saved portfolios, mapped to the ticker that

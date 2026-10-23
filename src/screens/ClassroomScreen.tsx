@@ -10,7 +10,6 @@ import { useClassroomStore, Classroom, Assignment, ClassMember, usePendingClassr
 import { useSyncStatusStore } from '../services/syncStatus';
 import { SyncBanner } from '../components/SyncBanner';
 import { useUserStore } from '../services/userStore';
-import { reportError } from '../services/syncStatus';
 import { classReviewsOpen, ON_TIME_DAYS } from '../services/predictionGrading';
 
 interface Props {
@@ -109,7 +108,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                 if (result) setSetupPhase(null);
                 else setJoinError("We couldn't find a class with that code. Check it with your teacher and try again.");
               } catch (e) {
-                reportError('classroom.join', e);
+                console.warn('[classroom] join failed:', e);
                 setJoinError("Couldn't reach the class right now. Check your connection and try again.");
               } finally {
                 setJoining(false);

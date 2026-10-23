@@ -14,7 +14,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Portfolio, Position, Trade, TradeType, Stock, Tier } from '../types';
-import { stockDatabase } from './stockDataService';
+import { stockDatabase, isRetiredSymbol, retiredSellPrice, RETIRED_SYMBOLS } from './stockDataService';
 import { isPredictionTextValid } from './tradeJournalStore';
 
 interface PortfolioState {
@@ -160,10 +160,35 @@ export const usePortfolioStore = create<PortfolioState>()(
           return { success: false, error: 'No portfolio initialized' };
         }
 
-        const { symbol, type, shares, pricePerShare, userTier } = params;
-        const totalAmount = shares * pricePerShare;
+        const { symbol, type, shares, userTier } = params;
+        let { pricePerShare } = params;
 
         // ============= VALIDATION =============
+
+        // Retired tickers (RETIRED_SYMBOLS): never bought. An existing
+        // position can still be sold, but only at its own last mark
+        // (position.currentPrice) — whatever price the caller passed is
+        // ignored, so a snapshot or saved quote can't slip in here. This is
+        // the one fill that doesn't need a live quote.
+        const retired = isRetiredSymbol(symbol);
+        if (retired) {
+          if (type === 'buy') {
+            return {
+              success: false,
+              error: `${symbol} is no longer traded here. ${RETIRED_SYMBOLS[symbol.toUpperCase()]}`,
+            };
+          }
+          const held = portfolio.positions.find(p => p.symbol === symbol);
+          if (!held) {
+            return { success: false, error: `You don't own any ${symbol}.` };
+          }
+          const lastMark = retiredSellPrice(symbol, held);
+          if (lastMark === null) {
+            return { success: false, error: `There's no saved price for your ${symbol} position, so it can't be sold right now.` };
+          }
+          pricePerShare = lastMark;
+        }
+        const totalAmount = shares * pricePerShare;
 
         // Thesis gate. A buy needs a written prediction: the claim travels in
         // buyReason and the way-to-be-wrong in exitPlan, and both land on the
@@ -181,7 +206,9 @@ export const usePortfolioStore = create<PortfolioState>()(
         }
 
         // Tier 1: Only approved blue-chips
-        if (userTier === 1 && !TIER_1_APPROVED_SYMBOLS.includes(symbol)) {
+        // (A retired ticker is on no allowlist; selling one you already hold
+        // must still work, so it skips this check.)
+        if (userTier === 1 && !retired && !TIER_1_APPROVED_SYMBOLS.includes(symbol)) {
           return {
             success: false,
             error: `${symbol} isn't available in Tier 1. Complete more lessons to unlock more stocks.`
@@ -364,6 +391,9 @@ export const usePortfolioStore = create<PortfolioState>()(
         const updatedPositions = portfolio.positions.map(position => {
           const newPrice = priceMap[position.symbol];
           if (newPrice === undefined) return position;
+          // A retired ticker keeps its last mark; nothing may rewrite it
+          // (its only other price is the January snapshot).
+          if (isRetiredSymbol(position.symbol)) return position;
           // Already marked at this price (value included — a sell can leave
           // currentValue out of step with currentPrice): nothing to do.
           if (newPrice === position.currentPrice && position.currentValue === position.shares * newPrice) return position;

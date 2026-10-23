@@ -15,6 +15,8 @@
  *   skipped when picking the last initial.
  */
 const SUFFIX = /^(jr|sr|ii|iii|iv|v)\.?$/i;
+// A leading title stays, with its dot: "Mr. Gordon" → "Mr. G." (teachers).
+const TITLE = /^(mr|mrs|ms|mx|miss|dr|prof)$/i;
 export const FALLBACK_PUBLIC_NAME = 'Investor';
 
 function capitalise(word: string): string {
@@ -30,7 +32,8 @@ function capitalise(word: string): string {
 export function publicDisplayName(fullName: string | null | undefined): string {
   const words = (fullName ?? '').split(/[\s._]+/).filter(Boolean);
   if (words.length === 0) return FALLBACK_PUBLIC_NAME;
-  const first = capitalise(words[0]!);
+  const titled = words.length > 1 && TITLE.test(words[0]!);
+  const first = titled ? `${capitalise(words[0]!)}.` : capitalise(words[0]!);
   const rest = words.slice(1).filter(w => !SUFFIX.test(w));
   const last = rest[rest.length - 1];
   const lead = last ? Array.from(last)[0] : undefined;

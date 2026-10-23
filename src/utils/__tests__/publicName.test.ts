@@ -19,7 +19,11 @@ describe('publicDisplayName', () => {
     ['Zoë Ångström', 'Zoë Å.'],
     ['José de la Cruz', 'José C.'],
     ['Jeremiah O\'Brien', 'Jeremiah O.'],
-    ['Jeremiah 2nd', 'Jeremiah'],                  // no letter to take an initial from
+    ['Jeremiah 2nd', 'Jeremiah'],
+    ['Mr. Gordon', 'Mr. G.'],                     // teacher titles keep their dot
+    ['ms rivera', 'Ms. R.'],
+    ['Dr. Ana Rivera', 'Dr. R.'],
+    ['Mr.', 'Mr'],                  // no letter to take an initial from
   ])('%j → %j', (input, expected) => {
     expect(publicDisplayName(input)).toBe(expected);
   });
@@ -36,7 +40,7 @@ describe('publicDisplayName', () => {
   });
 
   it('is stable: an already-short name comes back unchanged (old and new docs both display right)', () => {
-    for (const n of ['Jeremiah G.', 'Malik', 'DeShawn M.', 'Mary-Jane W.', 'Investor']) expect(publicDisplayName(n)).toBe(n);
+    for (const n of ['Jeremiah G.', 'Mr. G.', 'Malik', 'DeShawn M.', 'Mary-Jane W.', 'Investor']) expect(publicDisplayName(n)).toBe(n);
   });
 
   it('never contains the full last name', () => {

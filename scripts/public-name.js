@@ -5,6 +5,8 @@
  * two in step — src/utils/__tests__/publicName.port.test.ts checks they agree.
  */
 const SUFFIX = /^(jr|sr|ii|iii|iv|v)\.?$/i;
+// A leading title stays, with its dot: "Mr. Gordon" → "Mr. G." (teachers).
+const TITLE = /^(mr|mrs|ms|mx|miss|dr|prof)$/i;
 const FALLBACK_PUBLIC_NAME = 'Investor';
 
 function capitalise(word) {
@@ -19,7 +21,8 @@ function capitalise(word) {
 function publicDisplayName(fullName) {
   const words = (fullName ?? '').split(/[\s._]+/).filter(Boolean);
   if (words.length === 0) return FALLBACK_PUBLIC_NAME;
-  const first = capitalise(words[0]);
+  const titled = words.length > 1 && TITLE.test(words[0]);
+  const first = titled ? `${capitalise(words[0])}.` : capitalise(words[0]);
   const rest = words.slice(1).filter(w => !SUFFIX.test(w));
   const last = rest[rest.length - 1];
   const lead = last ? Array.from(last)[0] : undefined;

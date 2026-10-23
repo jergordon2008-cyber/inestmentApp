@@ -12,3 +12,6 @@ expo-env.d.ts
 .vercel
 functions/node_modules/
 dist/
+
+# Output of npm run privacy:checklist — real names and emails, never commit
+*checklist*.txt

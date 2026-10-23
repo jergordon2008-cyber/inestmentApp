@@ -105,12 +105,21 @@ describe('loadMyClassrooms — something stored locally', () => {
     mockListClassroomsForUser.mockReturnValue(new Promise(r => { finishLoad = r; }));
     mockCreateClassroomWithCode.mockResolvedValue(undefined);
     const load = state().loadMyClassrooms('teacher-1');
-    const created = await state().createClassroom({ name: 'New class' }, { uid: 'teacher-1', name: 'T', email: 't@example.com' });
+    const created = await state().createClassroom({ name: 'New class' }, { uid: 'teacher-1', name: 'T' });
     finishLoad([]); // the list was read before the create
     await load;
     expect(state().activeClassroomId).toBe(created.id);
     expect(state().classrooms.map(c => c.id)).toEqual([created.id]);
     expect(state().isTeacher).toBe(true);
+  });
+
+  it('writes the teacher into the roster as first name + last initial, with no email', async () => {
+    mockCreateClassroomWithCode.mockResolvedValue(undefined);
+    const created = await state().createClassroom({ name: 'New class' }, { uid: 'teacher-1', name: 'Jeremiah Gordon' });
+    expect(mockCreateClassroomWithCode).toHaveBeenCalledWith(expect.objectContaining({ id: created.id }), 'teacher-1');
+    const written = mockCreateClassroomWithCode.mock.calls[0]![0] as Classroom;
+    expect(written.members).toEqual([expect.objectContaining({ id: 'teacher-1', name: 'Jeremiah G.', role: 'teacher' })]);
+    expect(written.members[0]).not.toHaveProperty('email');
   });
 
   it('leaves the selection alone when loading fails', async () => {
@@ -124,7 +133,7 @@ describe('loadMyClassrooms — something stored locally', () => {
 describe('joinClassroom — class already loaded on this device', () => {
   it('opens it with the role this account has in it', async () => {
     useClassroomStore.setState({ classrooms: [classroom('class-a', '2026-09-01T00:00:00Z', ['teacher-1'])] });
-    const joined = await state().joinClassroom('abcde', { uid: 'teacher-1', name: 'T', email: 't@example.com' });
+    const joined = await state().joinClassroom('abcde', { uid: 'teacher-1', name: 'T' });
     expect(joined?.id).toBe('class-a');
     expect(state().activeClassroomId).toBe('class-a');
     expect(state().isTeacher).toBe(true);

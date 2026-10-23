@@ -3,15 +3,15 @@ import {
   View, Text, StyleSheet, SafeAreaView, ScrollView,
   TouchableOpacity, TextInput,
 } from 'react-native';
-import { showAlert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { changeColor, changeSign } from '../utils/change';
-import { useClassroomStore, Classroom, Assignment, ClassMember, usePendingClassroomIds } from '../services/classroomStore';
+import { classroomViewFor, useClassroomStore, Classroom, Assignment, ClassMember, usePendingClassroomIds } from '../services/classroomStore';
 import { useSyncStatusStore } from '../services/syncStatus';
 import { SyncBanner } from '../components/SyncBanner';
 import { useUserStore } from '../services/userStore';
 import { classReviewsOpen, ON_TIME_DAYS } from '../services/predictionGrading';
+import { publicDisplayName } from '../utils/publicName';
 
 interface Props {
   onBack: () => void;
@@ -24,7 +24,7 @@ type Tab = 'overview' | 'students' | 'assignments' | 'feed';
 export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentPress }: Props) {
   const { theme } = useTheme();
   const s = styles(theme);
-  const { classrooms, activeClassroomId, myRole, isTeacher,
+  const { classrooms, activeClassroomId,
     createClassroom, joinClassroom, loadMyClassrooms, refreshMembers,
     addAssignment, completeAssignment, postAnnouncement,
     setRole, setActiveClassroom } = useClassroomStore();
@@ -35,6 +35,10 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
   const [tab, setTab] = useState<Tab>('overview');
   const [setupPhase, setSetupPhase] = useState<'choose' | 'join' | 'create' | null>(null);
   const [joinCode, setJoinCode] = useState('');
+  // Shown under the code field. On web, showAlert is a browser pop-up, which
+  // looked like an error from the site rather than a message from the app.
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [joining, setJoining] = useState(false);
   const [createName, setCreateName] = useState('');
   const [createSubject, setCreateSubject] = useState('');
   const [createGrade, setCreateGrade] = useState('');
@@ -47,12 +51,14 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
 
   useEffect(() => { if (user) loadMyClassrooms(user.id); }, [user?.id]);
 
-  const classroom = classrooms.find(c => c.id === activeClassroomId);
+  // Only a class this account belongs to, and teacher controls only for its
+  // teachers, whatever another account left in this device's storage.
+  const { classroom, isTeacher } = classroomViewFor({ classrooms, activeClassroomId }, user?.id);
 
   useEffect(() => { if (classroom) refreshMembers(classroom.id); }, [classroom?.id]);
 
   // ── No classroom yet ──────────────────────────────────────────────────────
-  if (!classroom || !activeClassroomId) {
+  if (!classroom) {
     if (!setupPhase) return (
       <SafeAreaView style={s.container}>
         <View style={s.header}>
@@ -87,20 +93,32 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
           <Text style={[s.formLabel, { color: theme.colors.textSecondary }]}>Enter your class code</Text>
           <TextInput
             style={[s.input, { color: theme.colors.textPrimary, borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}
-            value={joinCode} onChangeText={setJoinCode} placeholder="e.g. A1B2C"
+            value={joinCode} onChangeText={t => { setJoinCode(t); setJoinError(null); }} placeholder="e.g. K7MPQ"
             placeholderTextColor={theme.colors.textTertiary} autoCapitalize="characters" autoFocus
           />
+          {joinError ? (
+            <Text accessibilityLiveRegion="polite" style={[s.joinError, { color: theme.colors.danger }]}>{joinError}</Text>
+          ) : null}
           <TouchableOpacity
-            style={[s.primaryBtn, { backgroundColor: theme.colors.primary, opacity: joinCode.length < 3 ? 0.5 : 1 }]}
-            disabled={joinCode.length < 3}
+            style={[s.primaryBtn, { backgroundColor: theme.colors.primary, opacity: joinCode.length < 3 || joining ? 0.5 : 1 }]}
+            disabled={joinCode.length < 3 || joining}
             onPress={async () => {
               if (!user) return;
-              const result = await joinClassroom(joinCode, { uid: user.id, name: user.displayName, email: user.email });
-              if (result) { setSetupPhase(null); }
-              else showAlert('Code not found', 'Double-check your class code with your teacher.');
+              setJoining(true);
+              setJoinError(null);
+              try {
+                const result = await joinClassroom(joinCode, { uid: user.id, name: user.displayName });
+                if (result) setSetupPhase(null);
+                else setJoinError("We couldn't find a class with that code. Check it with your teacher and try again.");
+              } catch (e) {
+                console.warn('[classroom] join failed:', e);
+                setJoinError("Couldn't reach the class right now. Check your connection and try again.");
+              } finally {
+                setJoining(false);
+              }
             }}
           >
-            <Text style={s.primaryBtnText}>Join Classroom →</Text>
+            <Text style={s.primaryBtnText}>{joining ? 'Joining…' : 'Join Classroom →'}</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -132,7 +150,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
               if (!user) return;
               await createClassroom(
                 { name: createName, subject: createSubject, gradeLevel: createGrade },
-                { uid: user.id, name: user.displayName, email: user.email }
+                { uid: user.id, name: user.displayName }
               );
               setSetupPhase(null);
             }}
@@ -244,10 +262,12 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                         </Text>
                       )}
                       <View style={[s.avatar, { backgroundColor: theme.colors.primary + '20' }]}>
-                        <Text style={[s.avatarText, { color: theme.colors.primary }]}>{m.name.charAt(0).toUpperCase()}</Text>
+                        <Text style={[s.avatarText, { color: theme.colors.primary }]}>{publicDisplayName(m.name).charAt(0)}</Text>
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={[s.studentName, { color: theme.colors.textPrimary }]}>{m.name}</Text>
+                        {/* Shortened on display too: rosters written before names were
+                            shortened at join still hold full names. */}
+                        <Text style={[s.studentName, { color: theme.colors.textPrimary }]}>{publicDisplayName(m.name)}</Text>
                         {/* portfolioValue/portfolioReturn are only ever written together, by
                             refreshMembers() pulling this member's public_stats doc — a student
                             who joined but never triggered a public_stats sync has both undefined
@@ -295,7 +315,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                     addAssignment(classroom.id, {
                       title: aTitle, description: aDesc, type: 'lesson',
                       dueDate: new Date(Date.now() + 7*86400000).toISOString(),
-                      assignedAt: new Date().toISOString(), assignedBy: user?.displayName ?? 'Teacher',
+                      assignedAt: new Date().toISOString(), assignedBy: publicDisplayName(user?.displayName ?? 'Teacher'),
                       points: 10, status: 'active',
                     });
                     setATitle(''); setADesc('');
@@ -346,7 +366,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                   style={[s.primaryBtn, { backgroundColor: theme.colors.primary, opacity: annTitle.length < 3 || annBody.length < 3 ? 0.5 : 1 }]}
                   disabled={annTitle.length < 3 || annBody.length < 3}
                   onPress={() => {
-                    postAnnouncement(classroom.id, { title: annTitle, body: annBody, postedBy: user?.displayName ?? 'Teacher', pinned: false });
+                    postAnnouncement(classroom.id, { title: annTitle, body: annBody, postedBy: publicDisplayName(user?.displayName ?? 'Teacher'), pinned: false });
                     setAnnTitle(''); setAnnBody('');
                     // No "live" alert: it fired before the write landed. The card
                     // shows "Saving…" until Firestore acknowledges it.
@@ -362,7 +382,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
               <View key={ann.id} style={[s.annCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
                 <Text style={[s.annTitle, { color: theme.colors.textPrimary }]}>{ann.title}</Text>
                 <Text style={[s.annBody, { color: theme.colors.textSecondary }]}>{ann.body}</Text>
-                <Text style={[s.annMeta, { color: theme.colors.textTertiary }]}>{ann.postedBy} · {new Date(ann.postedAt).toLocaleDateString()}</Text>
+                <Text style={[s.annMeta, { color: theme.colors.textTertiary }]}>{publicDisplayName(ann.postedBy)} · {new Date(ann.postedAt).toLocaleDateString()}</Text>
                 {pendingNote(ann.id)}
               </View>
             ))}
@@ -403,6 +423,7 @@ const styles = (theme: any) => StyleSheet.create({
   formPad: { padding: 20 },
   formLabel: { fontSize: 12, fontWeight: '700', marginBottom: 8 },
   input: { borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 14 },
+  joinError: { fontSize: 13, lineHeight: 18, marginTop: 8 },
 
   statsRow: { flexDirection: 'row', gap: 10, marginBottom: 16 },
   statBox: { flex: 1, borderRadius: 14, borderWidth: 1, padding: 14, alignItems: 'center' },

@@ -19,12 +19,12 @@ import { useUserStore } from '../services/userStore';
 import { useTradeJournalStore, Prediction, isPredictionFor, checkBackDate } from '../services/tradeJournalStore';
 import { useSkillTreeStore, SKILL_NODES } from '../services/skillTreeStore';
 import { logActivity } from '../services/firestoreSync';
-import { isRetiredSymbol } from '../services/stockDataService';
 import { getChallengeForLesson } from '../data/lessonChallenges';
 import { MoodGuardrailModal } from '../screens/MoodGuardrailModal';
 import type { Mood } from '../services/moodStore';
 import { DecisionJournalModal } from '../screens/DecisionJournalScreen';
 import { navigate, replace, goBack, goTab } from './navigationRef';
+import { isRetiredSymbol } from '../services/stockDataService';
 import type { RootStackParamList } from './types';
 import type { Trade, TradeType } from '../types';
 

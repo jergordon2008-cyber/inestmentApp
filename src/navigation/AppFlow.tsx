@@ -19,6 +19,7 @@ import { useUserStore } from '../services/userStore';
 import { useTradeJournalStore, Prediction, isPredictionFor, checkBackDate } from '../services/tradeJournalStore';
 import { useSkillTreeStore, SKILL_NODES } from '../services/skillTreeStore';
 import { logActivity } from '../services/firestoreSync';
+import { isRetiredSymbol } from '../services/stockDataService';
 import { getChallengeForLesson } from '../data/lessonChallenges';
 import { MoodGuardrailModal } from '../screens/MoodGuardrailModal';
 import type { Mood } from '../services/moodStore';
@@ -141,6 +142,13 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
   };
 
   const openTrade = (symbol: string, action: TradeType) => {
+    // A retired ticker can't be bought: show its stock page (with the "no
+    // longer traded" notice) instead of a prediction form for a buy that
+    // would be refused.
+    if (action === 'buy' && isRetiredSymbol(symbol)) {
+      navigate('StockDetail', { symbol });
+      return;
+    }
     setPendingMood(null);
     if (canUseFeature('moodGuard')) {
       setMoodModal({ visible: true, symbol, pendingTrade: { symbol, action } });

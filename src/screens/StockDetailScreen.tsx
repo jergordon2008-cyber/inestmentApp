@@ -8,6 +8,7 @@ import { useTheme } from '../context/ThemeContext';
 import { usePortfolioStore } from '../services/portfolioStore';
 import { fetchStock, getDataSourceLabel, getStockSync } from '../services/marketDataFacade';
 import { PriceCredit } from '../components/PriceCredit';
+import { RETIRED_SYMBOLS, isRetiredSymbol, retiredPriceLabel, retiredSellPrice } from '../services/stockDataService';
 import { getSignalsForStock } from '../services/signalEngine';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { AnimatedPressable } from '../components/AnimatedPressable';
@@ -71,6 +72,11 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
     ? theme.colors.primary
     : changeColor(stock.changePercent, theme);
   const isBlueChip = BLUE_CHIP_SYMBOLS.has(symbol);
+  // A retired ticker (RETIRED_SYMBOLS): no Buy, Sell only if held, and a
+  // holder sees their position's last mark rather than the snapshot.
+  const retired = isRetiredSymbol(symbol);
+  const lastMark = retired ? retiredSellPrice(symbol, position) : null;
+  const shownPrice = lastMark ?? stock.price;
 
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.colors.background }]}>
@@ -113,13 +119,13 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
         <View style={[s.priceCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderStrong }]}>
           <View style={s.priceRow}>
             <View>
-              <Text style={[s.price, { color: theme.colors.textPrimary }]}>${stock.price.toFixed(2)}</Text>
-              <View style={[s.changePill, s.changePillRow, { backgroundColor: color + '18' }]}>
+              <Text style={[s.price, { color: theme.colors.textPrimary }]}>${shownPrice.toFixed(2)}</Text>
+              {!retired && <View style={[s.changePill, s.changePillRow, { backgroundColor: color + '18' }]}>
                 {changeCaretName && <Ionicons name={changeCaretName} size={11} color={color} />}
                 <Text style={[s.change, { color }]}>
                   ${Math.abs(stock.change).toFixed(2)}  ({changeSign(stock.changePercent)}{stock.changePercent.toFixed(2)}%)
                 </Text>
-              </View>
+              </View>}
             </View>
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={[s.mcapLabel, { color: theme.colors.textTertiary }]}>Market Cap</Text>
@@ -129,8 +135,18 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
             </View>
           </View>
 
-          <PriceCredit label={getDataSourceLabel(stock)} style={{ marginTop: -8 }} />
+          <PriceCredit label={retired ? retiredPriceLabel(symbol) : getDataSourceLabel(stock)} style={{ marginTop: -8 }} />
         </View>
+
+        {retired && (
+          <View style={[s.positionBanner, s.positionBannerRow, { backgroundColor: theme.colors.gold + '14', borderColor: theme.colors.gold + '40' }]}>
+            <Ionicons name="information-circle-outline" size={14} color={theme.colors.gold} style={{ marginTop: 1 }} />
+            <Text style={[s.positionText, { flex: 1, color: theme.colors.gold }]}>
+              {symbol} is no longer traded here. {RETIRED_SYMBOLS[symbol.toUpperCase()]}
+              {position ? ' You can still sell the shares you own at their last known price.' : ''}
+            </Text>
+          </View>
+        )}
 
         {/* Position Banner */}
         {position && (
@@ -147,10 +163,12 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
 
         {/* Buy / Sell Buttons */}
         <View style={s.tradeRow}>
-          <AnimatedPressable onPress={() => onTrade(symbol, 'buy')} style={[s.buyBtn, { backgroundColor: theme.colors.primary, shadowColor: theme.colors.primary }]}>
-            <Ionicons name="arrow-up" size={14} color="#fff" />
-            <Text style={s.buyBtnText} numberOfLines={1}>Buy {symbol}</Text>
-          </AnimatedPressable>
+          {!retired && (
+            <AnimatedPressable onPress={() => onTrade(symbol, 'buy')} style={[s.buyBtn, { backgroundColor: theme.colors.primary, shadowColor: theme.colors.primary }]}>
+              <Ionicons name="arrow-up" size={14} color="#fff" />
+              <Text style={s.buyBtnText} numberOfLines={1}>Buy {symbol}</Text>
+            </AnimatedPressable>
+          )}
           {position && (
             <AnimatedPressable onPress={() => onTrade(symbol, 'sell')} style={[s.sellBtn, { backgroundColor: theme.colors.danger + '15', borderColor: theme.colors.danger + '40' }]}>
               <Ionicons name="arrow-down" size={14} color={theme.colors.danger} />

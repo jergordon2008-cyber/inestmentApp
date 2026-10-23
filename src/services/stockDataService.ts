@@ -1,7 +1,8 @@
 /**
  * Stock Data Service
  * 
- * The app's stock list (110 tickers) with a static January snapshot, plus
+ * The app's stock list (110 tickers, of which RETIRED_SYMBOLS are no longer
+ * tradable) with a static January snapshot, plus
  * the live prices the price robot delivers (see priceRobotAdapter.ts).
  * Screens read prices from here: getStock() returns the latest live or saved
  * price when there is one, and the snapshot otherwise.
@@ -299,6 +300,48 @@ export const stockDatabase: Record<string, Stock> = {
  */
 export const SYMBOL_ALIASES: Readonly<Record<string, string>> = { SQ: 'XYZ' };
 
+/**
+ * Tickers that are no longer traded in the app, with the reason shown to
+ * students. A retired ticker keeps its stockDatabase row so saved positions
+ * still resolve (name, logo, sector), but:
+ *  - it's left out of every list a student can pick from (getAllStocks and
+ *    everything built on it: browse, search, sectors, signals);
+ *  - it can't be bought (TradeScreen and executeTrade both refuse);
+ *  - robot prices for it are ignored, so a position keeps its last mark;
+ *  - an existing position can still be sold, at that last mark
+ *    (position.currentPrice) — the only trade ever filled without a live
+ *    quote. See retiredSellPrice().
+ *
+ * EA: the price robot uses Finnhub only, and Finnhub returns no data for EA.
+ * Keep in sync with RETIRED in workers/price-robot/src/symbols.ts.
+ */
+export const RETIRED_SYMBOLS: Readonly<Record<string, string>> = {
+  EA: 'Our price source has no live data for Electronic Arts, so it can no longer be bought here.',
+};
+
+export function isRetiredSymbol(symbol: string | null | undefined): boolean {
+  return !!symbol && Object.prototype.hasOwnProperty.call(RETIRED_SYMBOLS, symbol.toUpperCase());
+}
+
+/** The label shown beside a retired ticker's price. */
+export function retiredPriceLabel(symbol: string): string {
+  return `Last known price · ${symbol.toUpperCase()} is no longer traded here`;
+}
+
+/**
+ * The price a sell of a retired ticker fills at: the position's last mark.
+ * null when the symbol isn't retired or there's no usable mark — the caller
+ * must then refuse rather than reach for the snapshot.
+ */
+export function retiredSellPrice(
+  symbol: string,
+  position: { currentPrice?: number } | null | undefined,
+): number | null {
+  if (!isRetiredSymbol(symbol)) return null;
+  const p = position?.currentPrice;
+  return typeof p === 'number' && Number.isFinite(p) && p > 0 ? p : null;
+}
+
 function canonical(symbol: string): string {
   const upper = symbol.toUpperCase();
   return SYMBOL_ALIASES[upper] ?? upper;
@@ -344,7 +387,7 @@ export function applyLiveQuotes(
   let applied = 0;
   for (const [rawSymbol, q] of Object.entries(quotes)) {
     const sym = canonical(rawSymbol);
-    if (!stockDatabase[sym]) continue;
+    if (!stockDatabase[sym] || isRetiredSymbol(sym)) continue;
     if (!q || !(q.p > 0) || !Number.isFinite(Date.parse(q.t))) continue;
     const prev = _live[sym];
     if (prev) {
@@ -406,8 +449,11 @@ export function getStock(symbol: string): Stock | null {
   return stock;
 }
 
+/** Every tradable stock: the database minus RETIRED_SYMBOLS. */
 export function getAllStocks(): Stock[] {
-  return Object.keys(stockDatabase).map(sym => getStock(sym)!);
+  return Object.keys(stockDatabase)
+    .filter(sym => !isRetiredSymbol(sym))
+    .map(sym => getStock(sym)!);
 }
 
 // Aliases used by older code
@@ -415,6 +461,7 @@ export const getAllTier1Stocks = (): Stock[] => getAllStocks();
 export const getStocks = (symbols?: string[]): Stock[] => {
   if (!symbols || symbols.length === 0) return getAllStocks();
   return symbols
+    .filter(s => !isRetiredSymbol(s))
     .map(s => getStock(s))
     .filter((s): s is Stock => s !== null);
 };

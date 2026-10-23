@@ -33,6 +33,7 @@ import { getChallengeForLesson } from '../data/lessonChallenges';
 import { TabBar, TabName } from '../components/TabBar';
 import { FEATURES } from '../config/features';
 import { useAppFlow } from './AppFlow';
+import { isRetiredSymbol } from '../services/stockDataService';
 import { useAuthActions } from './AuthFlow';
 import { navigate, replace, goTab } from './navigationRef';
 import type {
@@ -440,6 +441,19 @@ function TradeRoute() {
     () => navigation.addListener('blur', () => clearPendingPrediction()),
     [navigation],
   );
+
+  // stocks/EA/buy for a retired ticker: the stock page, with its "no longer
+  // traded" notice and no Buy button (Sell only if held).
+  if (action === 'buy' && isRetiredSymbol(params.symbol)) {
+    return (
+      <StockDetailScreen
+        symbol={params.symbol.toUpperCase()}
+        onBack={back}
+        onTrade={flow.openTrade}
+        onLessonPress={flow.openLesson}
+      />
+    );
+  }
 
   return (
     <TradeScreen

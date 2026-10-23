@@ -271,6 +271,35 @@ describe('ticker change SQ → XYZ', () => {
   });
 });
 
+describe('retired ticker EA', () => {
+  it('ignores robot prices for EA, never asks the robot for it, and never marks a position with it', async () => {
+    const { adapter, store, facade } = await load();
+    const body = pricesBody();
+    (body.quotes as Record<string, unknown>).EA = { p: 140, pc: 139, t: T, src: 'finnhub' };
+    fetchMock.mockReturnValueOnce(okJson(body));
+    await adapter.refreshPrices();
+    expect(store.getStock('EA')?.priceOrigin).toBeUndefined();
+    expect(facade.isLiveQuote(store.getStock('EA'))).toBe(false);
+
+    fetchMock.mockClear();
+    const ea = await facade.fetchStock('EA');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(ea?.symbol).toBe('EA');
+
+    const map = facade.buildPositionPriceMap([store.getStock('EA')!, store.getStock('AAPL')!]);
+    expect(map).toEqual({ AAPL: 333.75 });
+    expect(store.getAllStocks().some(s => s.symbol === 'EA')).toBe(false);
+  });
+
+  it('other tickers still need a live quote: a saved price is not one', async () => {
+    const { store, facade } = await load();
+    store.applyLiveQuotes({ AAPL: { p: 300, pc: 299, t: T, src: 'finnhub' } }, 'saved', 0);
+    const aapl = store.getStock('AAPL')!;
+    expect(facade.isLiveQuote(aapl)).toBe(false);
+    expect(facade.buildPositionPriceMap([aapl])).toEqual({});
+  });
+});
+
 describe('credit', () => {
   it('names the source', async () => {
     expect((await load()).adapter.PRICE_CREDIT).toBe('Prices from Finnhub');

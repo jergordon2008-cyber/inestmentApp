@@ -24,9 +24,11 @@ import {
   getAllSectors,
   getStocksBySector,
   isLiveQuote,
+  isRetiredSymbol,
 } from './stockDataService';
 
 export { getAllSectors, getStocksBySector };
+export { isRetiredSymbol };
 export { LIVE_DATA_ENABLED, isLiveQuote };
 
 /**
@@ -35,7 +37,8 @@ export { LIVE_DATA_ENABLED, isLiveQuote };
  * only for an unknown symbol.
  */
 export async function fetchStock(symbol: string): Promise<Stock | null> {
-  if (LIVE_DATA_ENABLED) await refreshQuote(symbol);
+  // A retired ticker has no robot price to ask for (the robot answers 404).
+  if (LIVE_DATA_ENABLED && !isRetiredSymbol(symbol)) await refreshQuote(symbol);
   return getStock(symbol);
 }
 
@@ -118,6 +121,9 @@ export function buildPositionPriceMap(stocks: Stock[]): Record<string, number> {
   const map: Record<string, number> = {};
   for (const stock of stocks) {
     if (!stock || !(stock.price > 0)) continue;
+    // A retired ticker (RETIRED_SYMBOLS) keeps its last mark for good: its
+    // only price here would be the January snapshot, even in simulation.
+    if (isRetiredSymbol(stock.symbol)) continue;
     if (LIVE_DATA_ENABLED && !isLiveQuote(stock)) continue;
     map[stock.symbol] = stock.price;
   }

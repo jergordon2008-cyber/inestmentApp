@@ -50,7 +50,7 @@ describe('shared device: a student after a teacher', () => {
     mockLookup.mockResolvedValue('class-a');
     mockAddMember.mockResolvedValue();
     mockLoad.mockResolvedValue({ ...teachersClass, memberIds: ['teacher-1', 'student-1'] });
-    const joined = await state().joinClassroom('abcde', { uid: 'student-1', name: 'Malik', email: 'm@example.com' });
+    const joined = await state().joinClassroom('abcde', { uid: 'student-1', name: 'Malik' });
     expect(mockAddMember).toHaveBeenCalledWith('class-a', expect.objectContaining({ id: 'student-1', role: 'student' }));
     expect(joined?.id).toBe('class-a');
     expect(classroomViewFor(state(), 'student-1')).toMatchObject({ classroom: { id: 'class-a' }, isTeacher: false });
@@ -59,7 +59,7 @@ describe('shared device: a student after a teacher', () => {
 
   it('a member re-entering their own code still takes the local shortcut (no network)', async () => {
     useClassroomStore.setState({ classrooms: [{ ...teachersClass, memberIds: ['teacher-1', 'student-1'] }] });
-    await state().joinClassroom('ABCDE', { uid: 'student-1', name: 'Malik', email: 'm@example.com' });
+    await state().joinClassroom('ABCDE', { uid: 'student-1', name: 'Malik' });
     expect(mockLookup).not.toHaveBeenCalled();
     expect(classroomViewFor(state(), 'student-1').isTeacher).toBe(false);
   });

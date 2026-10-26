@@ -287,7 +287,14 @@ export function PortfolioPieChart({ positions, cash, totalValue, theme }: Props)
                 <Text style={[s.legendVal, { color: isSel ? sl.color : theme.colors.textPrimary, opacity: isDim ? 0.45 : 1 }]}>
                   ${sl.value.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                 </Text>
-                {pos && (
+                {/* Share of the portfolio. Without it, the only percent on a
+                    row was the position's gain, so a new position read
+                    "0.0%" next to an allocation bar saying 0.7%. A gain that
+                    would print as 0.0% is left out for the same reason. */}
+                <Text style={[s.legendGain, { color: theme.colors.textTertiary, opacity: isDim ? 0.45 : 1 }]}>
+                  {sliceShareLabel(sl.pct)} of portfolio
+                </Text>
+                {pos && Math.abs(pos.unrealizedGainPercent) >= 0.05 && (
                   <View style={[s.legendGainRow, { opacity: isDim ? 0.35 : 1 }]}>
                     {changeCaret(pos.unrealizedGain) && (
                       <Ionicons

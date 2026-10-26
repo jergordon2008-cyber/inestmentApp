@@ -3,7 +3,6 @@ import {
   View, Text, StyleSheet, SafeAreaView, ScrollView,
   TouchableOpacity, Pressable,
 } from 'react-native';
-import { showAlert } from '../utils/alert';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../context/ThemeContext';
 import { useUserStore } from '../services/userStore';
@@ -16,6 +15,7 @@ import { TradeType, Trade } from '../types';
 import { BehaviorCoachModal, BehaviorBias } from '../components/BehaviorCoachModal';
 import { Ionicons } from '@expo/vector-icons';
 import { logEvent } from '../services/analyticsService';
+import { fillMessage, FillMessage } from '../utils/tradeMessage';
 import { changeCaret, changeColor, changeTone } from '../utils/change';
 import { Prediction, isPredictionFor } from '../services/tradeJournalStore';
 
@@ -85,8 +85,23 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
   // two orders. A ref flips immediately.
   const submitLock = useRef(false);
 
+  // Result of the last order, shown on the ticket. On web, showAlert is a
+  // browser pop-up, which looked like an error from the site rather than a
+  // message from the app. A fill leaves the student on the ticket (the order
+  // button is locked, so it can't be placed twice) until they tap Done, which
+  // runs the same onTradeSuccess the alert's button used to.
+  const [filled, setFilled] = useState<{ message: FillMessage; trade: Trade | undefined } | null>(null);
+  const [tradeError, setTradeError] = useState<string | null>(null);
+
   // Any change to what's being traded invalidates a pending price warning.
-  useEffect(() => { setQuoteIssue(null); }, [inputVal, action, mode]);
+  useEffect(() => { setQuoteIssue(null); setTradeError(null); }, [inputVal, action, mode]);
+
+  // Leaving after a fill must still run onTradeSuccess (journal entry,
+  // activity feed, landing on Portfolio), whether via Done or the close button.
+  const finish = () => {
+    if (filled) onTradeSuccess(filled.trade);
+    else onBack();
+  };
 
   // Behavioral coaching
   const [coachBias, setCoachBias]   = useState<BehaviorBias | null>(null);
@@ -115,7 +130,7 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
   const predictionForThis = isPredictionFor(prediction, symbol) ? prediction : null;
   const needsPrediction = action === 'buy' && !predictionForThis;
   const retiredBlocked = retired && (action !== 'sell' || retiredPrice === null);
-  const canSubmit = validShares && hasEnoughCash && hasEnoughShares && submitPhase === 'idle' && !needsPrediction && !retiredBlocked;
+  const canSubmit = validShares && hasEnoughCash && hasEnoughShares && submitPhase === 'idle' && !filled && !needsPrediction && !retiredBlocked;
 
   const quickAmounts = action === 'buy'
     ? [250, 500, 1000, 2500].map(d => ({ label: `$${d}`, val: String((d / price).toFixed(4)) }))
@@ -137,23 +152,28 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
     // For a buy, the claim rides in buyReason and the way-to-be-wrong in
     // exitPlan, which executeTrade validates and stores on the Trade record.
     // Sells carry neither.
-    const result = executeTrade({
-      symbol, type: action, shares: fillShares, pricePerShare: fillPrice,
-      stock: fillStock, userTier: user.currentTier,
-      buyReason: action === 'buy' ? predictionForThis?.claim : undefined,
-      exitPlan: action === 'buy' ? predictionForThis?.falsifier : undefined,
-    });
+    setTradeError(null);
+    let result: ReturnType<typeof executeTrade>;
+    try {
+      result = executeTrade({
+        symbol, type: action, shares: fillShares, pricePerShare: fillPrice,
+        stock: fillStock, userTier: user.currentTier,
+        buyReason: action === 'buy' ? predictionForThis?.claim : undefined,
+        exitPlan: action === 'buy' ? predictionForThis?.falsifier : undefined,
+      });
+    } catch (e) {
+      console.warn('[trade] executeTrade failed', e);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setTradeError("Couldn't place the order right now. Your portfolio is unchanged. Try again.");
+      return;
+    }
     if (result.success) {
       logEvent('trade_submitted', { symbol, side: action, has_thesis: action === 'buy' });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showAlert(
-        action === 'buy' ? '✅ Order Filled' : '✅ Sold',
-        `${action === 'buy' ? 'Bought' : 'Sold'} ${fillShares.toFixed(4)} shares of ${symbol} at $${fillPrice.toFixed(2)}`,
-        [{ text: 'Done', onPress: () => onTradeSuccess(result.trade) }]
-      );
+      setFilled({ message: fillMessage(action, symbol, fillShares, fillPrice), trade: result.trade });
     } else {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      showAlert('Trade Failed', result.error ?? 'Something went wrong.');
+      setTradeError(result.error ?? 'Something went wrong.');
     }
   };
 
@@ -271,7 +291,7 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
 
       {/* Header */}
       <View style={s.header}>
-        <TouchableOpacity onPress={onBack} style={s.backBtn}>
+        <TouchableOpacity onPress={finish} style={s.backBtn}>
           <Ionicons name="close" size={20} color={theme.colors.textSecondary} />
         </TouchableOpacity>
         <View style={s.stockHeader}>
@@ -433,16 +453,28 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
             </Text>
           </View>
         )}
+        {tradeError ? (
+          <Text accessibilityLiveRegion="polite" style={[s.tradeError, { color: theme.colors.danger }]}>{tradeError}</Text>
+        ) : null}
+        {filled ? (
+          <View accessibilityLiveRegion="polite" style={[s.noticeRow, { backgroundColor: theme.colors.success + '14', borderColor: theme.colors.success + '40' }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.fillTitle, { color: theme.colors.success }]}>{filled.message.title}</Text>
+              <Text style={[s.noticeText, { color: theme.colors.textSecondary }]}>{filled.message.detail}</Text>
+            </View>
+          </View>
+        ) : null}
         <TouchableOpacity
-          onPress={handleSubmit}
-          disabled={!canSubmit}
+          onPress={filled ? finish : handleSubmit}
+          disabled={!filled && !canSubmit}
           style={[s.submitBtn, {
             backgroundColor: action === 'buy' ? theme.colors.success : theme.colors.danger,
-            opacity: canSubmit ? 1 : 0.4,
+            opacity: filled || canSubmit ? 1 : 0.4,
           }]}
         >
           <Text style={s.submitText}>
-            {submitPhase === 'checking'   ? 'Confirming price…'
+            {filled ? 'Done'
+             : submitPhase === 'checking'   ? 'Confirming price…'
              : submitPhase === 'submitting' ? 'Processing…'
              : quoteIssue?.kind === 'unavailable' ? 'Try again'
              : quoteIssue?.kind === 'moved' ? `Confirm at $${quoteIssue.to.toFixed(2)}`
@@ -496,6 +528,8 @@ const styles = (theme: any) => StyleSheet.create({
 
   footer: { paddingHorizontal: 20, paddingVertical: 14, paddingBottom: 28, borderTopWidth: 1 },
   noticeRow:  { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10 },
+  tradeError: { fontSize: 13, lineHeight: 18, marginBottom: 10 },
+  fillTitle:  { fontSize: 14, fontWeight: '800', marginBottom: 2 },
   noticeText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '600' },
   predictBtn: { marginTop: 6, alignSelf: 'flex-start', paddingVertical: 2 },
   submitBtn: { paddingVertical: 16, borderRadius: 16, alignItems: 'center' },

@@ -9,6 +9,7 @@
  */
 
 import { Stock } from '../types';
+import { rankStockSearch } from '../utils/stockSearch';
 
 // Fixed snapshot date for this static dataset — NOT Date.now(). These prices
 // are a hand-authored snapshot, not a live feed; stamping them with the
@@ -473,12 +474,7 @@ export function getAllSectors(): string[] {
 }
 
 export function searchStocks(query: string): Stock[] {
-  const q = query.toLowerCase();
-  return getAllStocks().filter(
-    (s) => 
-      s.symbol.toLowerCase().includes(q) ||
-      s.name.toLowerCase().includes(q)
-  );
+  return rankStockSearch(getAllStocks(), query);
 }
 
 export function getStocksBySector(sector: string): Stock[] {

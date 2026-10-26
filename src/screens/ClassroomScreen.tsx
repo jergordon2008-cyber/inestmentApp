@@ -7,10 +7,10 @@ import { showAlert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { changeColor, changeSign } from '../utils/change';
-import { isAssignmentActive, isOverdue } from '../utils/assignments';
 import { useClassroomStore, Classroom, Assignment, ClassMember, usePendingClassroomIds } from '../services/classroomStore';
 import { useSyncStatusStore } from '../services/syncStatus';
 import { SyncBanner } from '../components/SyncBanner';
+import { isAssignmentActive, isOverdue } from '../utils/assignments';
 import { useUserStore } from '../services/userStore';
 import { classReviewsOpen, ON_TIME_DAYS } from '../services/predictionGrading';
 

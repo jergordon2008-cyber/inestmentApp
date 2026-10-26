@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { changeCaret, changeColor, changeSign, changeTone } from '../utils/change';
+import { changeCaret, changeColor, changeTone, formatMoneyChange, formatPercentChange } from '../utils/change';
 import { useTheme } from '../context/ThemeContext';
 import { usePortfolioStore } from '../services/portfolioStore';
 import { fetchStock, getDataSourceLabel, getStockSync } from '../services/marketDataFacade';
@@ -124,7 +124,7 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
               {!retired && <View style={[s.changePill, s.changePillRow, { backgroundColor: color + '18' }]}>
                 {changeCaretName && <Ionicons name={changeCaretName} size={11} color={color} />}
                 <Text style={[s.change, { color }]}>
-                  ${Math.abs(stock.change).toFixed(2)}  ({changeSign(stock.changePercent)}{stock.changePercent.toFixed(2)}%)
+                  {formatMoneyChange(stock.change)}  ({formatPercentChange(stock.changePercent, stock.change)})
                 </Text>
               </View>}
             </View>
@@ -157,7 +157,7 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
             <Text style={[s.positionText, { flex: 1, color: theme.colors.primary }]}>
               You own {position.shares.toFixed(4)} shares · Avg ${position.averageCost.toFixed(2)} ·{' '}
               <Text style={{ color: changeColor(position.unrealizedGain, theme) }}>
-                {changeSign(position.unrealizedGain)}{position.unrealizedGain.toFixed(2)} ({position.unrealizedGainPercent.toFixed(2)}%)
+                {formatMoneyChange(position.unrealizedGain)} ({formatPercentChange(position.unrealizedGainPercent, position.unrealizedGain)})
               </Text>
             </Text>
           </View>

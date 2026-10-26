@@ -13,7 +13,7 @@ import { AnimatedNumber } from '../components/AnimatedNumber';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { PortfolioPieChart } from '../components/PortfolioPieChart';
 import { Position } from '../types';
-import { changeCaret, changeColor, changeSign } from '../utils/change';
+import { changeCaret, changeColor, formatMoneyChange, formatPercentChange } from '../utils/change';
 import { allocationSplit } from '../utils/allocation';
 import { SyncBanner } from '../components/SyncBanner';
 import { PriceCredit } from '../components/PriceCredit';
@@ -143,7 +143,7 @@ export function PortfolioScreen({ onBack, onStockPress, onBrowsePress, embedded,
               <View style={[s.balChip, { backgroundColor: perf + '18' }]}>
                 <Text style={[s.balChipLabel, { color: theme.colors.textTertiary }]}>All-time return</Text>
                 <Text style={[s.balChipVal, { color: perf }]}>
-                  {changeSign(totalReturn)}${Math.abs(totalReturn).toFixed(2)} ({portfolio.totalReturnPercent?.toFixed(2) ?? '0.00'}%)
+                  {formatMoneyChange(totalReturn)} ({formatPercentChange(portfolio.totalReturnPercent, totalReturn)})
                 </Text>
               </View>
               <View style={[s.balChip, { backgroundColor: theme.colors.surfaceMuted }]}>
@@ -307,7 +307,7 @@ function PositionCard({ pos, index, theme, onPress }: { pos: Position; index: nu
             <View style={[s.posReturnPill, { backgroundColor: c + '18' }]}>
               {caret && <Ionicons name={caret} size={9} color={c} />}
               <Text style={[s.posReturn, { color: c }]}>
-                {changeSign(pos.unrealizedGain)}{pos.unrealizedGain.toFixed(2)} ({pos.unrealizedGainPercent.toFixed(2)}%)
+                {formatMoneyChange(pos.unrealizedGain)} ({formatPercentChange(pos.unrealizedGainPercent, pos.unrealizedGain)})
               </Text>
             </View>
           </View>

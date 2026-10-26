@@ -444,7 +444,10 @@ export function LessonScreen({ lesson, onBack, onLessonComplete }: Props) {
   const completeLesson = useUserStore(s => s.completeLesson);
   // A finished lesson is one of the day's qualifying actions (dailyStreak).
   const recordActivity = useUserStore(s => s.recordActivity);
-  const addXP = useSkillTreeStore(s => s.addXP);
+  const awardLessonXP = useSkillTreeStore(s => s.awardLessonXP);
+  const lessonsCompleted = useUserStore(s => s.user?.lessonsCompleted);
+  // Read before completeLesson() adds it, so XP is only paid the first time.
+  const wasCompleted = lessonsCompleted?.includes(lesson.id) ?? false;
   const s = styles(theme);
 
   // Build interleaved content blocks
@@ -567,7 +570,7 @@ export function LessonScreen({ lesson, onBack, onLessonComplete }: Props) {
         setQuizComplete(true);
         completeLesson(lesson.id);
         recordActivity();
-        addXP(lesson.xpReward ?? (lesson.difficulty * 80 + 60));
+        awardLessonXP(lesson.id, lesson.xpReward ?? (lesson.difficulty * 80 + 60), wasCompleted);
         markLessonComplete();
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setTimeout(() => setShowCelebration(true), 400);
@@ -698,7 +701,7 @@ export function LessonScreen({ lesson, onBack, onLessonComplete }: Props) {
                   setQuizComplete(true);
                   completeLesson(lesson.id);
                   recordActivity();
-                  addXP(lesson.xpReward ?? (lesson.difficulty * 80 + 60));
+                  awardLessonXP(lesson.id, lesson.xpReward ?? (lesson.difficulty * 80 + 60), wasCompleted);
                   markLessonComplete();
                   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                   setTimeout(() => setShowCelebration(true), 400);

@@ -58,9 +58,13 @@ interface SkillTreeState {
   level: number;
   unlockedNodes: string[];
   completedNodes: string[];
+  /** Lesson ids whose XP has been paid out — a lesson only ever awards XP once. */
+  completedLessons: string[];
   selectedBranch: Branch | null;
   gamificationEnabled: boolean;
   addXP: (amount: number) => void;
+  /** Pay a lesson's XP once. `alreadyCompleted`: the profile already lists it (users from before this list existed). */
+  awardLessonXP: (lessonId: string, amount: number, alreadyCompleted: boolean) => void;
   completeNode: (nodeId: string) => void;
   setSelectedBranch: (branch: Branch | null) => void;
   setGamificationEnabled: (enabled: boolean) => void;
@@ -131,18 +135,64 @@ export const SKILL_NODES: SkillNode[] = [
 
 function calcLevel(xp: number) { return Math.floor(Math.sqrt(xp / 100)) + 1; }
 
+const XP_KEY = '@investapp:skill_xp';
+const NODES_KEY = '@investapp:completed_nodes';
+const LESSONS_KEY = '@investapp:completed_lessons';
+const BASE_UNLOCKED = ['v1', 'g1', 'm1', 't1', 'p1'];
+
+// Nothing is written until the saved state has been read, so an early save can
+// never replace a larger saved total. XP earned in that window is kept here and
+// added on top of the saved value once it arrives.
+let loadPromise: Promise<void> | null = null;
+let loaded = false;
+let xpUnreadable = false; // saved XP exists but is not a number — leave it alone
+let pendingBonusXP = 0;
+const pendingLessonXP = new Map<string, number>();
+
+function saveXP(xp: number) {
+  if (!loaded || xpUnreadable) return;
+  AsyncStorage.setItem(XP_KEY, String(xp)).catch(() => {});
+}
+function saveLessons(ids: string[]) {
+  if (!loaded) return;
+  AsyncStorage.setItem(LESSONS_KEY, JSON.stringify(ids)).catch(() => {});
+}
+function saveNodes(ids: string[]) {
+  if (!loaded) return;
+  AsyncStorage.setItem(NODES_KEY, JSON.stringify(ids)).catch(() => {});
+}
+function parseList(raw: string | null): string[] {
+  if (!raw) return [];
+  const parsed = JSON.parse(raw);
+  return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+}
+
 export const useSkillTreeStore = create<SkillTreeState>((set, get) => ({
   xp: 0,
   level: 1,
-  unlockedNodes: ['v1', 'g1', 'm1', 't1', 'p1'],
+  unlockedNodes: [...BASE_UNLOCKED],
   completedNodes: [],
+  completedLessons: [],
   selectedBranch: null,
   gamificationEnabled: true,
 
   addXP: (amount) => {
     const newXP = get().xp + amount;
     set({ xp: newXP, level: calcLevel(newXP) });
-    AsyncStorage.setItem('@investapp:skill_xp', String(newXP)).catch(() => {});
+    if (!loaded) pendingBonusXP += amount;
+    saveXP(newXP);
+  },
+
+  awardLessonXP: (lessonId, amount, alreadyCompleted) => {
+    if (get().completedLessons.includes(lessonId)) return;
+    const lessons = [...get().completedLessons, lessonId];
+    set({ completedLessons: lessons });
+    saveLessons(lessons);
+    if (alreadyCompleted) return;
+    if (!loaded) pendingLessonXP.set(lessonId, amount);
+    get().addXP(amount);
+    // addXP counted it as a bonus too; lessons are tracked by id instead.
+    if (!loaded) pendingBonusXP -= amount;
   },
 
   completeNode: (nodeId) => {
@@ -159,7 +209,7 @@ export const useSkillTreeStore = create<SkillTreeState>((set, get) => ({
       unlockedNodes: [...s.unlockedNodes, ...newUnlocked],
     });
     get().addXP(node.xpReward);
-    AsyncStorage.setItem('@investapp:completed_nodes', JSON.stringify([...s.completedNodes, nodeId])).catch(() => {});
+    saveNodes([...s.completedNodes, nodeId]);
   },
 
   setSelectedBranch: (branch) => set({ selectedBranch: branch }),
@@ -169,22 +219,51 @@ export const useSkillTreeStore = create<SkillTreeState>((set, get) => ({
     AsyncStorage.setItem('@investapp:gamification', String(enabled)).catch(() => {});
   },
 
-  load: async () => {
-    try {
-      const [xpRaw, nodesRaw, gamRaw] = await Promise.all([
-        AsyncStorage.getItem('@investapp:skill_xp'),
-        AsyncStorage.getItem('@investapp:completed_nodes'),
-        AsyncStorage.getItem('@investapp:gamification'),
-      ]);
-      const xp = xpRaw ? parseInt(xpRaw) : 0;
-      const completed = nodesRaw ? JSON.parse(nodesRaw) : [];
-      const gamification = gamRaw !== 'false';
-      // recompute unlocked
-      const unlocked = new Set(['v1', 'g1', 'm1', 't1', 'p1']);
-      completed.forEach((id: string) => {
-        SKILL_NODES.filter(n => n.requires.includes(id)).forEach(n => unlocked.add(n.id));
-      });
-      set({ xp, level: calcLevel(xp), completedNodes: completed, unlockedNodes: Array.from(unlocked), gamificationEnabled: gamification });
-    } catch {}
+  // Runs once at startup (bottom of this file); later calls share the same result.
+  load: () => {
+    if (loadPromise) return loadPromise;
+    loadPromise = (async () => {
+      try {
+        const [xpRaw, nodesRaw, lessonsRaw, gamRaw] = await Promise.all([
+          AsyncStorage.getItem(XP_KEY),
+          AsyncStorage.getItem(NODES_KEY),
+          AsyncStorage.getItem(LESSONS_KEY),
+          AsyncStorage.getItem('@investapp:gamification'),
+        ]);
+        const savedXP = xpRaw === null ? 0 : parseInt(xpRaw, 10);
+        xpUnreadable = Number.isNaN(savedXP);
+        const savedLessons = parseList(lessonsRaw);
+        const savedNodes = parseList(nodesRaw);
+        // A lesson finished before the load that turns out to be saved already was paid before.
+        let earlyXP = pendingBonusXP;
+        pendingLessonXP.forEach((amount, id) => { if (!savedLessons.includes(id)) earlyXP += amount; });
+        const xp = (xpUnreadable ? 0 : savedXP) + earlyXP;
+        const s = get();
+        const completed = Array.from(new Set([...savedNodes, ...s.completedNodes]));
+        const lessons = Array.from(new Set([...savedLessons, ...s.completedLessons]));
+        // recompute unlocked
+        const unlocked = new Set(BASE_UNLOCKED);
+        completed.forEach((id: string) => {
+          SKILL_NODES.filter(n => n.requires.includes(id)).forEach(n => unlocked.add(n.id));
+        });
+        set({
+          xp, level: calcLevel(xp), completedNodes: completed, completedLessons: lessons,
+          unlockedNodes: Array.from(unlocked), gamificationEnabled: gamRaw !== 'false',
+        });
+        loaded = true;
+        pendingBonusXP = 0;
+        pendingLessonXP.clear();
+        // Persist only what the early actions changed.
+        if (earlyXP > 0) saveXP(xp);
+        if (lessons.length !== savedLessons.length) saveLessons(lessons);
+        if (completed.length !== savedNodes.length) saveNodes(completed);
+      } catch (e) {
+        loadPromise = null; // nothing was written; let a later call retry
+        console.warn('[skillTree] could not load saved progress', e);
+      }
+    })();
+    return loadPromise;
   },
 }));
+
+useSkillTreeStore.getState().load();

@@ -290,9 +290,11 @@ export function PortfolioPieChart({ positions, cash, totalValue, theme }: Props)
                 {/* Share of the portfolio. Without it, the only percent on a
                     row was the position's gain, so a new position read
                     "0.0%" next to an allocation bar saying 0.7%. A gain that
-                    would print as 0.0% is left out for the same reason. */}
+                    would print as 0.0% is left out for the same reason. Just
+                    the number: "of portfolio" cut the name to "A…" at phone
+                    width (the donut centre still spells it out). */}
                 <Text style={[s.legendGain, { color: theme.colors.textTertiary, opacity: isDim ? 0.45 : 1 }]}>
-                  {sliceShareLabel(sl.pct)} of portfolio
+                  {sliceShareLabel(sl.pct)}
                 </Text>
                 {pos && Math.abs(pos.unrealizedGainPercent) >= 0.05 && (
                   <View style={[s.legendGainRow, { opacity: isDim ? 0.35 : 1 }]}>

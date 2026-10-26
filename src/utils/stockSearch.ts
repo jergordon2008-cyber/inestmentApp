@@ -4,7 +4,9 @@
  * UnitedHealth (Unit-ed-H-ea-lth) ahead of any ticker. Symbol matches come
  * first (exact, then prefix, then anywhere), then name matches (a word that
  * starts with the query before one that merely contains it); ties go to the
- * larger company.
+ * larger company. A query of one or two letters is read as a ticker, so it
+ * only matches names at the start of a word: "EA" no longer finds
+ * UnitedHealth at all.
  */
 interface Searchable {
   symbol: string;
@@ -19,7 +21,7 @@ function tier(s: Searchable, q: string): number {
   if (sym.includes(q)) return 2;
   const name = s.name.toLowerCase();
   if (name.startsWith(q) || name.includes(` ${q}`)) return 3;
-  if (name.includes(q)) return 4;
+  if (q.length >= 3 && name.includes(q)) return 4;
   return -1;
 }
 

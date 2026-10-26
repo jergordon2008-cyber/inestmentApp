@@ -13,7 +13,12 @@ const stocks = [
 
 describe('rankStockSearch', () => {
   it('exact symbol, then symbol prefix, then symbol contains, then name matches', () => {
-    expect(rankStockSearch(stocks, 'EA').map(s => s.symbol)).toEqual(['EA', 'EAT', 'PEAR', 'UNH']);
+    expect(rankStockSearch(stocks, 'EA').map(s => s.symbol)).toEqual(['EA', 'EAT', 'PEAR']);
+  });
+
+  it('a one- or two-letter query matches names only at a word start', () => {
+    expect(rankStockSearch(stocks, 'ea').map(s => s.symbol)).not.toContain('UNH');
+    expect(rankStockSearch(stocks, 'hea').map(s => s.symbol)).toEqual(['UNH']);
   });
 
   it('name matches rank after symbol matches, word-start before substring', () => {
@@ -33,7 +38,9 @@ describe('searchStocks (app list)', () => {
     expect(syms[0]).toBe('AAPL');
   });
 
-  it('the retired EA stays unfindable', () => {
-    expect(searchStocks('EA').some(s => s.symbol === 'EA')).toBe(false);
+  it('the retired EA stays unfindable, and "EA" no longer lists UnitedHealth', () => {
+    const syms = searchStocks('EA').map(s => s.symbol);
+    expect(syms).not.toContain('EA');
+    expect(syms).not.toContain('UNH');
   });
 });

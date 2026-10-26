@@ -49,7 +49,7 @@ export function AuthScreen({ mode, onAuthed, onBack, onSwitchMode }: Props) {
     }
 
     setLoading(true);
-    const result = isSignup ? await signUp(trimmedEmail, password) : await signIn(trimmedEmail, password);
+    const result = isSignup ? await signUp(trimmedEmail, password, trimmedName) : await signIn(trimmedEmail, password);
     setLoading(false);
 
     if (!result.success || !result.uid) {

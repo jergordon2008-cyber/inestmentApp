@@ -9,6 +9,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
+  updateProfile,
   onAuthStateChanged,
   User as FirebaseUser,
 } from 'firebase/auth';
@@ -34,11 +35,15 @@ function friendlyAuthError(code: string): string {
   }
 }
 
-export async function signUp(email: string, password: string): Promise<AuthResult> {
+export async function signUp(email: string, password: string, name?: string): Promise<AuthResult> {
   const auth = getFirebaseAuth();
   if (!auth) return { success: false, error: 'Accounts are not configured yet.' };
   try {
     const cred = await createUserWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+    // Keep the sign-up name on the Auth account too. It otherwise lives only in
+    // React state until onboarding finishes, so a refresh in between lost it
+    // and the profile fell back to the email prefix (and the name prompt).
+    if (name?.trim()) await updateProfile(cred.user, { displayName: name.trim() }).catch(() => {});
     return { success: true, uid: cred.user.uid, email: cred.user.email ?? email };
   } catch (e: any) {
     return { success: false, error: friendlyAuthError(e?.code ?? '') };
@@ -71,4 +76,9 @@ export function subscribeToAuthChanges(cb: (user: FirebaseUser | null) => void):
 export function getCurrentUid(): string | null {
   const auth = getFirebaseAuth();
   return auth?.currentUser?.uid ?? null;
+}
+
+/** The name given at sign-up, kept on the Auth account (see signUp). */
+export function getCurrentAuthName(): string {
+  return getFirebaseAuth()?.currentUser?.displayName?.trim() ?? '';
 }

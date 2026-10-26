@@ -2,8 +2,9 @@
  * Alpaca Market Data (free Basic plan, IEX feed).
  *
  * DISABLED: nothing in the live path imports this file (test/alpaca.test.ts
- * checks). Alpaca declined to approve showing its data to our students, so
- * the robot runs on Finnhub only (docs/PRICE-ROBOT-DESIGN.md §0). The adapter
+ * checks). Alpaca refused display of free-plan data to our students (ticket
+ * #367333, Oct 5, 2026), so the robot runs on Finnhub only
+ * (docs/PRICE-ROBOT-DESIGN.md §0). The adapter
  * is kept, with its tests, in case that changes: one multi-symbol snapshot
  * call returns every ticker, and its calendar knows holidays and early closes.
  */

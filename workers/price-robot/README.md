@@ -3,7 +3,7 @@
 Refreshes stock prices during US market hours and serves them to the app. Design and limits: [docs/PRICE-ROBOT-DESIGN.md](../../docs/PRICE-ROBOT-DESIGN.md).
 
 - **Source:** Finnhub only, every minute during market hours, at most 45 calls a minute (limit 60). Tickers students hold or opened recently first (up to 12 every minute), every other ticker at least every 3 minutes. Alpaca is disabled (no display permission); its adapter stays in `src/alpaca.ts` for the future.
-- **Licensing:** Finnhub has **not** approved showing its data to students; both founders accepted that risk (design §0).
+- **Licensing:** no provider has approved showing its data to students (Alpaca refused, Finnhub never replied). Displaying Finnhub data is an accepted risk agreed by both founders (design §0).
 - **Storage:** Workers KV keys `prices:v1`, `demand:v1` (priority tickers), `watchdog:v1`.
 - **Endpoints:** `GET /v1/prices`, `GET /v1/quote/:symbol`, `GET /v1/health`. None of them calls Finnhub.
 - **Watchdog:** every 5 minutes; alerts to ntfy.sh or Discord if prices are more than 10 minutes old.
@@ -46,10 +46,10 @@ You need Node 22 and a checkout of the repo at the commit to deploy. About 15 mi
    `*` matches one hostname part, which covers Vercel preview URLs. Only these sites can read `/v1/prices` and `/v1/quote/*`: any other site, and any request with no `Origin` (curl, a browser tab opened on the URL), gets 403. `/v1/health` stays open. `localhost` is not allowed on the deployed Worker. This is not authentication: a script that sends an allowed `Origin` header still gets through, and a native app (no `Origin`) would be refused too.
 5. **Set the two secrets.** Each command prompts for the value; nothing is written to disk or shell history.
    ```sh
-   npx wrangler secret put FINNHUB_KEY      # the NEW server-only Finnhub key; never the key the app used to carry
+   npx wrangler secret put FINNHUB_KEY      # the key of Malik's Finnhub account; never the key the app used to carry
    npx wrangler secret put ALERT_URL        # e.g. https://ntfy.sh/<long random topic>, or a Discord webhook URL
    ```
-   - **`FINNHUB_KEY`:** create a dedicated key in the Finnhub dashboard for the robot only. Don't reuse it anywhere else (not in Vercel, not in the app): it must stay on the server. Check it first: `curl -H "X-Finnhub-Token: <key>" "https://finnhub.io/api/v1/quote?symbol=VOO"` should answer a price, not 401/403.
+   - **`FINNHUB_KEY`:** the API key of Malik's Finnhub account (the only account we tested whose key returns ETFs such as VOO). Malik sends it to you privately. Don't put it anywhere else (not in Vercel, not in the app): it must stay on the server. Check it first: `curl -H "X-Finnhub-Token: <key>" "https://finnhub.io/api/v1/quote?symbol=VOO"` should answer a price, not 401/403.
    - **`ALERT_URL`:** for ntfy, install the ntfy app on your phone and subscribe to the same topic name. Treat the topic name like a password: anyone who knows it can read and send.
    - **If you already deployed the Alpaca version**, remove its now-unused secrets:
      ```sh

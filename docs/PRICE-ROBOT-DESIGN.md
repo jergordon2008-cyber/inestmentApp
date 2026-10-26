@@ -3,22 +3,25 @@
 **Status:** Finnhub only. Built and tested; not deployed yet. Jeremiah deploys the Worker (§7), then ships the app.
 **Date:** 2026-10-22. Limits below were checked on this date (sources at the end).
 
-## 0. Licensing: display NOT approved (accepted risk)
+## 0. Licensing: no approvals (accepted risk)
 
-| | Alpaca (free, IEX feed) | Finnhub (free) |
+**There are no written approvals from any data provider.** Status on 2026-10-26:
+
+| Provider | What happened | In the live robot |
 |---|---|---|
-| **Display to students** | **Refused** | **Not approved** |
-| **In the live robot** | No. The adapter stays in the code, disabled (`alpaca.ts`) | Yes, the only source |
+| **Alpaca** (free plan, IEX feed) | **Refused** display of free-plan data to our students (support ticket #367333, Oct 5, 2026) | No. The adapter stays in the code, disabled (`alpaca.ts`) |
+| **Finnhub** (free plan) | Asked for written approval; **never replied** | **Yes, the only source**, on **Malik's Finnhub account** (the only account we tested whose key returns ETFs such as VOO) |
+| **Twelve Data** (non-profit programme) | Application **not completed** | No |
 
-- **Alpaca** refused permission to show its data to our students. Nothing in the live path calls Alpaca; a test fails if any Worker file imports `alpaca.ts` or if `wrangler.toml` names Alpaca secrets.
-- **Finnhub's** terms require *"written approval from Finnhub"* to share its data or results derived from it. We don't have that approval. **Both founders decided on 2026-10-22 to go live on Finnhub anyway and accept the risk** (Finnhub could refuse or revoke the key, or ask us to stop). Twelve Data, the licensed alternative, isn't available to us.
+- **Displaying Finnhub data to students is an accepted risk, agreed by both founders** (decided 2026-10-22). Finnhub's terms require *"written approval from Finnhub"* to share its data or results derived from it, and we don't have it. Finnhub could refuse or revoke the key, or ask us to stop.
+- Nothing in the live path calls Alpaca; a test fails if any Worker file imports `alpaca.ts` or if `wrangler.toml` names Alpaca secrets.
 - **What limits the risk:**
   - prices are shown only inside the app, to signed-in students, for education;
   - no resale and no public feed: `/v1/prices` and `/v1/quote/*` answer only the app's own web origins (§3);
   - the app credits the source ("Prices from Finnhub").
 - **What would make it worse:** charging for the app, or exposing prices to anyone outside the app.
 - **If Finnhub refuses the key** (HTTP 401/403): the watchdog sends an ntfy alert and the app falls back to saved prices, labelled as such (§5). There is no second source to switch to.
-- **The robot uses a dedicated, server-only Finnhub key**, used by nothing else and never in the app. The old key from the app bundle (public, already refused) must not be reused.
+- **The key** is the API key of Malik's Finnhub account. It lives only in the Worker's secrets: never in the app or Vercel. The old key from the app bundle (public, already refused) must not be reused. Malik sends the key to Jeremiah privately for `wrangler secret put`, like `ALERT_URL`.
 
 ## 1. Verified limits
 
@@ -28,7 +31,7 @@
 | **Workers KV** | 100,000 reads/day · **1,000 writes/day** · 1 write/s per key · 25 MiB per value | ≈ 400 writes per trading day plus at most 200 for the demand list (§4). The price blob is ~15 KB. |
 | **Finnhub** free | **60 calls/min** (30/s cap) | **45 per minute**, hard-capped in code; the watchdog's rare catch-up adds at most 10 (55). |
 
-**Tested with the new key on 2026-10-22, during market hours:**
+**Tested with the key of Malik's Finnhub account on 2026-10-22, during market hours:**
 - `/quote` works for stocks and ETFs: **AAPL and VOO answered** (VOO 701.71, trade 16:56 UTC).
 - `/stock/market-holiday?exchange=US` lists holidays and early closes for 2026 and 2027 (Nov 27 and Dec 24, 2026 close at 13:00).
 - **Full Worker in `wrangler dev`, three cron runs one minute apart:**
@@ -39,7 +42,7 @@
 - **`EA` gets no price:** Finnhub answers `c: 0` (no quote data) while its company profile still exists. Decision: EA is retired from the app's tradable list (`RETIRED_SYMBOLS` in the app, `RETIRED` in `symbols.ts`), so the robot no longer fetches it and `/v1/quote/EA` answers 404. Existing EA positions keep their last known price and can still be sold at it.
 - **`SQ` → `XYZ`:** `SQ` last traded on 2025-01-17 (Block changed its ticker). The robot serves `XYZ` and maps `SQ` to it.
 
-**Accounts:** Cloudflare (free, no card) is owned by Jeremiah and managed with his agreement. The Finnhub key for the robot is new and server-only.
+**Accounts:** Cloudflare (free, no card) is owned by Jeremiah and managed with his agreement. Finnhub: Malik's account; its key is used only by the robot, as a Worker secret.
 
 ## 2. Tickers supported
 
@@ -153,7 +156,7 @@ Production is the Vercel web app only; there's no phone app. The old production 
 Deploy steps for Jeremiah are in `workers/price-robot/README.md`. In short:
 1. Log in with `npx wrangler login`.
 2. KV namespace: already created (id in `wrangler.toml`).
-3. Set **two** secrets: `FINNHUB_KEY` (the new server-only key) and `ALERT_URL`. If the Alpaca secrets were set on an earlier deploy, delete them.
+3. Set **two** secrets: `FINNHUB_KEY` (the key of Malik's Finnhub account, sent privately by Malik) and `ALERT_URL`. If the Alpaca secrets were set on an earlier deploy, delete them.
 4. Deploy, then check `/v1/health`.
 
 **Local testing (no Cloudflare account needed):**
@@ -209,7 +212,7 @@ Wait a minute between manual runs: each one uses 45 of Finnhub's 60 calls a minu
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| **Finnhub display not approved** | Finnhub may revoke the key or ask us to stop | Accepted by both founders (§0); app-only, origin-restricted, credited; watchdog alerts on a refused key |
+| **No written approval from any provider** (Finnhub never replied) | Finnhub may revoke the key or ask us to stop | Accepted risk, agreed by both founders (§0); app-only, origin-restricted, credited; watchdog alerts on a refused key |
 | Finnhub is the only source | A Finnhub outage or refused key means no live prices | App falls back to saved prices, labelled; trades blocked; ntfy alert |
 | 45/min near the 60/min limit | A burst over 60 gets 429s | Fixed budget in code; no endpoint calls Finnhub; catch-up limited to 10; a 429 stops that run's batch |
 | A ticker with no Finnhub data (`EA`, now retired) | Retired in the app: not buyable, held shares sell at their last price | `/v1/health` (`old`) shows any new one |

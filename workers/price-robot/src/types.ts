@@ -36,7 +36,7 @@ export interface PriceBlob {
 
 export interface Env {
   PRICES: KVNamespace;
-  /** Server-only Finnhub key, used by nothing else (never the app's key). */
+  /** Key of Malik's Finnhub account; a Worker secret only, never in the app. */
   FINNHUB_KEY: string;
   /** ntfy.sh topic URL or Discord webhook URL. Optional: without it alerts only go to the log. */
   ALERT_URL?: string;

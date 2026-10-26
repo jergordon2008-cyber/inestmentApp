@@ -19,10 +19,12 @@ id = "fb90b84df3984689bcf657762decfc77"
 
 [vars]
 # Web origins allowed to read prices from a browser (comma-separated; "*"
-# matches one hostname label part, for Vercel preview URLs). localhost is
-# always allowed. Native apps send no Origin and aren't affected.
+# matches one hostname label part, for Vercel preview URLs). Requests with
+# no Origin, or any other one, get 403 on /v1/prices and /v1/quote/*.
+# localhost is NOT allowed here; `npm run dev` allows it locally only, via
+# DEV_ALLOW_LOCALHOST in the git-ignored .dev.vars.
 ALLOWED_ORIGINS = "https://investiq-web-blond.vercel.app,https://investmentapp-*-malik-c31f.vercel.app"
 
-# Secrets (never in this file): FINNHUB_KEY (a dedicated server-only key,
-# never the one the app used to carry) and ALERT_URL. Set with
+# Secrets (never in this file): FINNHUB_KEY (the key of Malik's Finnhub
+# account, never the one the app used to carry) and ALERT_URL. Set with
 # `npx wrangler secret put <NAME>`. Alpaca is disabled: no Alpaca secrets.

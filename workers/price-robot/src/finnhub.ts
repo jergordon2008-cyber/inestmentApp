@@ -7,8 +7,9 @@
  * Nothing else in the Worker calls Finnhub: /v1/quote and /v1/prices only
  * read KV. That also keeps every run under the Free plan's 50 subrequests.
  *
- * Display: Finnhub has not approved showing its data to our students; both
- * founders accepted that risk (docs/PRICE-ROBOT-DESIGN.md §0).
+ * Display: there is no written approval (Finnhub never replied); showing
+ * its data to our students is an accepted risk agreed by both founders
+ * (docs/PRICE-ROBOT-DESIGN.md §0).
  */
 import type { SourceQuote } from './types';
 

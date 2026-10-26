@@ -15,6 +15,7 @@ import { PortfolioPieChart } from '../components/PortfolioPieChart';
 import { Position } from '../types';
 import { changeCaret, changeColor, changeSign } from '../utils/change';
 import { SyncBanner } from '../components/SyncBanner';
+import { PriceCredit } from '../components/PriceCredit';
 
 interface Props {
   onBack: () => void; onStockPress: (sym: string) => void; onBrowsePress: () => void;
@@ -59,8 +60,8 @@ export function PortfolioScreen({ onBack, onStockPress, onBrowsePress, embedded,
     setRefreshing(true);
     const syms   = portfolio.positions.map(p => p.symbol);
     const stocks = await fetchStocks(syms);
-    // See buildPositionPriceMap: symbols whose quote fell back to the static
-    // snapshot are dropped rather than written over a good mark.
+    // See buildPositionPriceMap: symbols without a confirmed live price
+    // (saved or snapshot) are dropped rather than written over a good mark.
     updatePositionPrices(buildPositionPriceMap(stocks));
     setRefreshing(false);
   };
@@ -151,6 +152,7 @@ export function PortfolioScreen({ onBack, onStockPress, onBrowsePress, embedded,
                 </Text>
               </View>
             </View>
+            <PriceCredit style={{ marginTop: 6 }} />
 
             {/* Allocation mini bar */}
             <View style={[s.allocMiniTrack, { backgroundColor: theme.colors.border }]}>

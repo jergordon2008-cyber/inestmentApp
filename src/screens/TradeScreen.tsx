@@ -9,6 +9,8 @@ import { useTheme } from '../context/ThemeContext';
 import { useUserStore } from '../services/userStore';
 import { usePortfolioStore } from '../services/portfolioStore';
 import { getStockSync, fetchStock, isLiveQuote, LIVE_DATA_ENABLED } from '../services/marketDataFacade';
+import { isRetiredSymbol, retiredPriceLabel, retiredSellPrice } from '../services/stockDataService';
+import { PriceCredit } from '../components/PriceCredit';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { TradeType, Trade } from '../types';
 import { BehaviorCoachModal, BehaviorBias } from '../components/BehaviorCoachModal';
@@ -48,7 +50,13 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
   useEffect(() => { setStock(getStockSync(symbol)); }, [symbol]);
   const position = portfolio?.positions.find(p => p.symbol === symbol);
 
-  const [action, setAction]         = useState<TradeType>(initAction);
+  // A retired ticker (RETIRED_SYMBOLS) is sell-only, and only for a student
+  // who holds it: the ticket fills at the position's last mark, since there
+  // is no live quote to confirm. Every other ticker still needs one.
+  const retired = isRetiredSymbol(symbol);
+  const retiredPrice = retired ? retiredSellPrice(symbol, position) : null;
+
+  const [action, setAction]         = useState<TradeType>(retired ? 'sell' : initAction);
   const [mode, setMode]             = useState<'shares' | 'dollars'>('shares');
   const [inputVal, setInputVal]     = useState('');
 
@@ -86,7 +94,8 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
 
   const s = styles(theme);
 
-  const price = stock?.price ?? 0;
+  // (With no last mark the snapshot is shown, but retiredBlocked stops any fill.)
+  const price = retired ? (retiredPrice ?? stock?.price ?? 0) : (stock?.price ?? 0);
   const shares = useMemo(() => {
     const n = parseFloat(inputVal) || 0;
     return mode === 'shares' ? n : n / price;
@@ -105,7 +114,8 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
   // runs again in executeTrade, so this is the visible lock, not the only one.
   const predictionForThis = isPredictionFor(prediction, symbol) ? prediction : null;
   const needsPrediction = action === 'buy' && !predictionForThis;
-  const canSubmit = validShares && hasEnoughCash && hasEnoughShares && submitPhase === 'idle' && !needsPrediction;
+  const retiredBlocked = retired && (action !== 'sell' || retiredPrice === null);
+  const canSubmit = validShares && hasEnoughCash && hasEnoughShares && submitPhase === 'idle' && !needsPrediction && !retiredBlocked;
 
   const quickAmounts = action === 'buy'
     ? [250, 500, 1000, 2500].map(d => ({ label: `$${d}`, val: String((d / price).toFixed(4)) }))
@@ -151,9 +161,10 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
    * Confirm handler. Re-quotes before filling.
    *
    * The price on screen was captured when the screen opened and can be
-   * minutes old by the time the student taps — and if the app booted into a
-   * Finnhub rate limit it may be the January snapshot, which would be written
-   * into cost basis permanently. So: fetch fresh, then decide.
+   * minutes old by the time the student taps — and if the price robot
+   * couldn't be reached it may be a saved price or the January snapshot,
+   * which would be written into cost basis permanently. So: fetch fresh,
+   * then decide.
    *
    * Failure blocks rather than retrying or falling back. A wrong mark heals on
    * the next refresh; a wrong execution price never does. Blocking a paper
@@ -165,8 +176,16 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
     submitLock.current = true;
 
     try {
-      // No API key: the app is a deliberate simulation and snapshot prices
-      // are the intended marks. Nothing to re-quote against.
+      // Retired ticker: sell at the position's last mark, no re-quote (there
+      // is nothing to quote). executeTrade fills at that same mark whatever
+      // is passed, and refuses a buy.
+      if (retired) {
+        if (action === 'sell' && retiredPrice !== null) await placeOrder(stock, retiredPrice, shares);
+        return;
+      }
+
+      // No price robot configured: the app is a deliberate simulation and
+      // snapshot prices are the intended marks. Nothing to re-quote against.
       if (!LIVE_DATA_ENABLED) {
         await placeOrder(stock, price, shares);
         return;
@@ -176,9 +195,10 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
       setQuoteIssue(null);
       const fresh = await fetchStock(symbol);
 
-      // fetchStock never throws and never reports failure — on a rate limit
-      // it hands back the static snapshot. isLiveQuote is what distinguishes
-      // a real quote from that substitute.
+      // fetchStock never throws and never reports failure — if the robot
+      // can't be reached it hands back the saved or snapshot price.
+      // isLiveQuote accepts only a price confirmed by the robot within the
+      // last few minutes (CONFIRMED_FOR_MS).
       if (!fresh || !(fresh.price > 0) || !isLiveQuote(fresh)) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         setQuoteIssue({ kind: 'unavailable' });
@@ -265,6 +285,7 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
                 {Math.abs(stock.changePercent ?? 0).toFixed(2)}%
               </Text>
             </View>
+            {retired ? <PriceCredit label={retiredPriceLabel(symbol)} /> : <PriceCredit />}
           </View>
         </View>
         <View style={{ width: 32 }} />
@@ -273,7 +294,7 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
         {/* Buy/Sell toggle */}
         <View style={[s.toggleRow, { backgroundColor: theme.colors.surfaceElevated }]}>
-          {(['buy', 'sell'] as TradeType[]).map(a => (
+          {(retired ? ['sell'] as TradeType[] : ['buy', 'sell'] as TradeType[]).map(a => (
             <TouchableOpacity key={a} onPress={() => { setAction(a); setInputVal(''); }}
               style={[s.toggleBtn, action === a && { backgroundColor: a === 'buy' ? theme.colors.success : theme.colors.danger }]}>
               <Text style={[s.toggleText, { color: action === a ? '#07070D' : theme.colors.textSecondary }]}>
@@ -358,7 +379,19 @@ export function TradeScreen({ symbol, action: initAction, onBack, onTradeSuccess
 
       {/* Submit */}
       <View style={[s.footer, { backgroundColor: theme.colors.background, borderTopColor: theme.colors.border }]}>
-        {needsPrediction && (
+        {retired && (
+          <View style={[s.noticeRow, { backgroundColor: theme.colors.gold + '14', borderColor: theme.colors.gold + '40' }]}>
+            <Ionicons name="information-circle-outline" size={15} color={theme.colors.gold} />
+            <Text style={[s.noticeText, { color: theme.colors.gold }]}>
+              {!position
+                ? `${symbol} is no longer traded here, so it can't be bought.`
+                : retiredPrice === null
+                  ? `${symbol} is no longer traded here, and there's no saved price for your shares, so they can't be sold right now.`
+                  : `${symbol} is no longer traded here. You can still sell your shares at their last known price, $${retiredPrice.toFixed(2)}.`}
+            </Text>
+          </View>
+        )}
+        {needsPrediction && !retired && (
           // Reached when a student lands here without writing one — most
           // often by URL (stocks/:symbol/buy), or by switching a sell ticket
           // to Buy. Buy stays disabled; this is the way forward.

@@ -6,7 +6,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { changeCaret, changeColor, changeSign, changeTone } from '../utils/change';
 import { useTheme } from '../context/ThemeContext';
 import { usePortfolioStore } from '../services/portfolioStore';
-import { fetchStock, getDataSourceLabel } from '../services/marketDataFacade';
+import { fetchStock, getDataSourceLabel, getStockSync } from '../services/marketDataFacade';
+import { PriceCredit } from '../components/PriceCredit';
+import { RETIRED_SYMBOLS, isRetiredSymbol, retiredPriceLabel, retiredSellPrice } from '../services/stockDataService';
 import { getSignalsForStock } from '../services/signalEngine';
 import { CompanyLogo } from '../components/CompanyLogo';
 import { AnimatedPressable } from '../components/AnimatedPressable';
@@ -28,7 +30,9 @@ interface Props {
 export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Props) {
   const { theme } = useTheme();
   const portfolio = usePortfolioStore(s => s.portfolio);
-  const [stock, setStock] = useState<Stock | null>(null);
+  // Starts from the best price already on the device, so the page never
+  // waits on the network; the robot's answer replaces it when it lands.
+  const [stock, setStock] = useState<Stock | null>(() => getStockSync(symbol));
   const [signals, setSignals] = useState<Signal[]>([]);
   // The earnings signal needs a network call, so the Signals tab has a real
   // loading state rather than flashing "No signals" before the answer lands.
@@ -38,7 +42,10 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
 
   useEffect(() => {
     let cancelled = false;
-    fetchStock(symbol).then(setStock);
+    setStock(getStockSync(symbol));
+    fetchStock(symbol)
+      .then(fresh => { if (!cancelled && fresh) setStock(fresh); })
+      .catch(e => console.warn('[stockDetail] quote failed:', e));
     setSignalsLoading(true);
     getSignalsForStock(symbol)
       .then(result => { if (!cancelled) setSignals(result); })
@@ -55,7 +62,7 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
           <Text style={[s.back, { color: theme.colors.primary }]}>Back</Text>
         </TouchableOpacity>
       </View>
-      <Text style={[{ padding: 20, color: theme.colors.textSecondary }]}>Loading...</Text>
+      <Text style={[{ padding: 20, color: theme.colors.textSecondary }]}>This stock isn't available.</Text>
     </SafeAreaView>
   );
 
@@ -65,6 +72,11 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
     ? theme.colors.primary
     : changeColor(stock.changePercent, theme);
   const isBlueChip = BLUE_CHIP_SYMBOLS.has(symbol);
+  // A retired ticker (RETIRED_SYMBOLS): no Buy, Sell only if held, and a
+  // holder sees their position's last mark rather than the snapshot.
+  const retired = isRetiredSymbol(symbol);
+  const lastMark = retired ? retiredSellPrice(symbol, position) : null;
+  const shownPrice = lastMark ?? stock.price;
 
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.colors.background }]}>
@@ -107,13 +119,13 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
         <View style={[s.priceCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderStrong }]}>
           <View style={s.priceRow}>
             <View>
-              <Text style={[s.price, { color: theme.colors.textPrimary }]}>${stock.price.toFixed(2)}</Text>
-              <View style={[s.changePill, s.changePillRow, { backgroundColor: color + '18' }]}>
+              <Text style={[s.price, { color: theme.colors.textPrimary }]}>${shownPrice.toFixed(2)}</Text>
+              {!retired && <View style={[s.changePill, s.changePillRow, { backgroundColor: color + '18' }]}>
                 {changeCaretName && <Ionicons name={changeCaretName} size={11} color={color} />}
                 <Text style={[s.change, { color }]}>
                   ${Math.abs(stock.change).toFixed(2)}  ({changeSign(stock.changePercent)}{stock.changePercent.toFixed(2)}%)
                 </Text>
-              </View>
+              </View>}
             </View>
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={[s.mcapLabel, { color: theme.colors.textTertiary }]}>Market Cap</Text>
@@ -123,10 +135,18 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
             </View>
           </View>
 
-          <Text style={[s.mcapLabel, { color: theme.colors.textTertiary, marginTop: -8 }]}>
-            {getDataSourceLabel(stock)}
-          </Text>
+          <PriceCredit label={retired ? retiredPriceLabel(symbol) : getDataSourceLabel(stock)} style={{ marginTop: -8 }} />
         </View>
+
+        {retired && (
+          <View style={[s.positionBanner, s.positionBannerRow, { backgroundColor: theme.colors.gold + '14', borderColor: theme.colors.gold + '40' }]}>
+            <Ionicons name="information-circle-outline" size={14} color={theme.colors.gold} style={{ marginTop: 1 }} />
+            <Text style={[s.positionText, { flex: 1, color: theme.colors.gold }]}>
+              {symbol} is no longer traded here. {RETIRED_SYMBOLS[symbol.toUpperCase()]}
+              {position ? ' You can still sell the shares you own at their last known price.' : ''}
+            </Text>
+          </View>
+        )}
 
         {/* Position Banner */}
         {position && (
@@ -143,10 +163,12 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
 
         {/* Buy / Sell Buttons */}
         <View style={s.tradeRow}>
-          <AnimatedPressable onPress={() => onTrade(symbol, 'buy')} style={[s.buyBtn, { backgroundColor: theme.colors.primary, shadowColor: theme.colors.primary }]}>
-            <Ionicons name="arrow-up" size={14} color="#fff" />
-            <Text style={s.buyBtnText} numberOfLines={1}>Buy {symbol}</Text>
-          </AnimatedPressable>
+          {!retired && (
+            <AnimatedPressable onPress={() => onTrade(symbol, 'buy')} style={[s.buyBtn, { backgroundColor: theme.colors.primary, shadowColor: theme.colors.primary }]}>
+              <Ionicons name="arrow-up" size={14} color="#fff" />
+              <Text style={s.buyBtnText} numberOfLines={1}>Buy {symbol}</Text>
+            </AnimatedPressable>
+          )}
           {position && (
             <AnimatedPressable onPress={() => onTrade(symbol, 'sell')} style={[s.sellBtn, { backgroundColor: theme.colors.danger + '15', borderColor: theme.colors.danger + '40' }]}>
               <Ionicons name="arrow-down" size={14} color={theme.colors.danger} />
@@ -172,8 +194,8 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
           <View style={s.statsGrid}>
             {/* Only fields the live quote actually supplies. P/E, EPS, Dividend,
                 Beta, 52W High/Low and Volume used to sit here rendering '—' on
-                every stock — Finnhub's free tier doesn't return them (see
-                finnhubAdapter), so the cards are gone rather than empty. */}
+                every stock — the price robot doesn't deliver them, so the
+                cards are gone rather than empty. */}
             {[
               { label: 'Day Range',      val: `$${stock.dayLow?.toFixed(2)} – $${stock.dayHigh?.toFixed(2)}` },
               { label: 'Previous Close', val: `$${stock.previousClose?.toFixed(2)}` },

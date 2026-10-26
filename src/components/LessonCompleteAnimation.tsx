@@ -120,13 +120,15 @@ interface Props {
   visible: boolean;
   lessonTitle: string;
   xpEarned: number;
+  /** A replay: the lesson's XP was paid the first time, so none is added now. */
+  alreadyEarned?: boolean;
   streakDays?: number;
   isFirstLesson?: boolean;
   onContinue: () => void;
 }
 
 export function LessonCompleteAnimation({
-  visible, lessonTitle, xpEarned, streakDays = 1, isFirstLesson = false, onContinue,
+  visible, lessonTitle, xpEarned, alreadyEarned = false, streakDays = 1, isFirstLesson = false, onContinue,
 }: Props) {
   const { theme } = useTheme();
   const overlayOpacity = useRef(new Animated.Value(0)).current;
@@ -229,7 +231,9 @@ export function LessonCompleteAnimation({
           {/* XP Counter */}
           <View style={[cs.xpRow, { backgroundColor: theme.colors.primaryGlow, borderColor: theme.colors.primary + '30' }]}>
             <AnimatedCounter target={xpEarned} color={theme.colors.primary} />
-            <Text style={[cs.xpSub, { color: theme.colors.textTertiary }]}>Knowledge banked</Text>
+            <Text style={[cs.xpSub, { color: theme.colors.textTertiary }]}>
+              {alreadyEarned ? 'XP already earned for this lesson' : 'Knowledge banked'}
+            </Text>
           </View>
 
           {/* Stats */}

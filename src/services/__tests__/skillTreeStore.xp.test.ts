@@ -58,6 +58,14 @@ describe('skill tree XP — replay', () => {
     expect(store.getState().xp).toBe(100);
   });
 
+  it('reports what it paid, so the completion screen shows 0 on a replay', async () => {
+    const store = startApp();
+    await store.getState().load();
+    expect(store.getState().awardLessonXP('T1L01', 100, false)).toBe(100);
+    expect(store.getState().awardLessonXP('T1L01', 100, false)).toBe(0);
+    expect(store.getState().awardLessonXP('T1L02', 100, true)).toBe(0);
+  });
+
   it('awards nothing for a lesson already completed after a reload', async () => {
     const first = startApp();
     await first.getState().load();

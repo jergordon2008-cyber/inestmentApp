@@ -63,8 +63,8 @@ interface SkillTreeState {
   selectedBranch: Branch | null;
   gamificationEnabled: boolean;
   addXP: (amount: number) => void;
-  /** Pay a lesson's XP once. `alreadyCompleted`: the profile already lists it (users from before this list existed). */
-  awardLessonXP: (lessonId: string, amount: number, alreadyCompleted: boolean) => void;
+  /** Pay a lesson's XP once and return what was paid (0 on a replay). `alreadyCompleted`: the profile already lists it (users from before this list existed). */
+  awardLessonXP: (lessonId: string, amount: number, alreadyCompleted: boolean) => number;
   completeNode: (nodeId: string) => void;
   setSelectedBranch: (branch: Branch | null) => void;
   setGamificationEnabled: (enabled: boolean) => void;
@@ -184,15 +184,16 @@ export const useSkillTreeStore = create<SkillTreeState>((set, get) => ({
   },
 
   awardLessonXP: (lessonId, amount, alreadyCompleted) => {
-    if (get().completedLessons.includes(lessonId)) return;
+    if (get().completedLessons.includes(lessonId)) return 0;
     const lessons = [...get().completedLessons, lessonId];
     set({ completedLessons: lessons });
     saveLessons(lessons);
-    if (alreadyCompleted) return;
+    if (alreadyCompleted) return 0;
     if (!loaded) pendingLessonXP.set(lessonId, amount);
     get().addXP(amount);
     // addXP counted it as a bonus too; lessons are tracked by id instead.
     if (!loaded) pendingBonusXP -= amount;
+    return amount;
   },
 
   completeNode: (nodeId) => {

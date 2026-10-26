@@ -26,3 +26,14 @@ export function allocationSplit(cash: number, totalValue: number): AllocationSpl
   const investedPct = Math.min(100, Math.max(0, ((totalValue - cash) / totalValue) * 100));
   return { investedPct, investedLabel: label(investedPct), cashLabel: label(100 - investedPct) };
 }
+
+/**
+ * One-decimal share label for a single slice. toFixed(1) alone printed "0.0%"
+ * for a position under 0.05% while the bar above it read "<0.1%"; any nonzero
+ * share that would round to zero now shows as "<0.1%" instead.
+ */
+export function sliceShareLabel(pct: number): string {
+  if (!(pct > 0)) return '0.0%';
+  if (pct < 0.05) return '<0.1%';
+  return `${pct.toFixed(1)}%`;
+}

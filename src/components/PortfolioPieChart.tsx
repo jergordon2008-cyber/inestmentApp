@@ -19,6 +19,7 @@ import {
 import Svg, { G, Circle as SvgCircle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { changeCaret, changeColor } from '../utils/change';
+import { sliceShareLabel } from '../utils/allocation';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -184,7 +185,7 @@ export function PortfolioPieChart({ positions, cash, totalValue, theme }: Props)
     ? `$${sel.value.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
     : `$${totalValue.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
   const centerSub    = sel
-    ? `${sel.pct.toFixed(1)}% of portfolio`
+    ? `${sliceShareLabel(sel.pct)} of portfolio`
     : `${positions.length} position${positions.length !== 1 ? 's' : ''}`;
   const centerColor  = sel ? sel.color : theme.colors.primary;
 

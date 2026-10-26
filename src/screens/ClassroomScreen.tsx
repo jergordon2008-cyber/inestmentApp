@@ -7,6 +7,7 @@ import { showAlert } from '../utils/alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { changeColor, changeSign } from '../utils/change';
+import { isAssignmentActive, isOverdue } from '../utils/assignments';
 import { useClassroomStore, Classroom, Assignment, ClassMember, usePendingClassroomIds } from '../services/classroomStore';
 import { useSyncStatusStore } from '../services/syncStatus';
 import { SyncBanner } from '../components/SyncBanner';
@@ -162,7 +163,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
     const base = `${m.predictionsWritten} written · ${m.predictionsReviewed ?? 0} reviewed`;
     return reviewsOpen ? `${base} · ${m.reviewedOnTime ?? 0} on time` : base;
   };
-  const activeAssignments = classroom.assignments.filter(a => a.status === 'active');
+  const activeAssignments = classroom.assignments.filter(a => isAssignmentActive(a));
 
   return (
     <SafeAreaView style={s.container}>
@@ -313,7 +314,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                 <Text style={[s.assignmentTitle, { color: theme.colors.textPrimary }]}>{a.title}</Text>
                 {!!a.description && <Text style={[s.assignmentDesc, { color: theme.colors.textSecondary }]}>{a.description}</Text>}
                 <Text style={[s.assignmentMeta, { color: theme.colors.textTertiary }]}>
-                  {a.completedBy.length} completed · {a.points} pts · Due {new Date(a.dueDate).toLocaleDateString()}
+                  {a.completedBy.length} completed · {a.points} pts · Due {new Date(a.dueDate).toLocaleDateString()}{isOverdue(a) ? ' · Overdue' : ''}
                 </Text>
                 {pendingNote(a.id)}
                 {!isTeacher && user && !a.completedBy.includes(user.id) && (

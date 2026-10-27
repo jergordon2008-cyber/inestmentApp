@@ -28,6 +28,7 @@ import { useTheme } from '../context/ThemeContext';
 import { Card } from '../components/Card';
 import { useUserStore } from '../services/userStore';
 import { fetchBrowsableStocks } from '../services/marketDataFacade';
+import { PriceCredit } from '../components/PriceCredit';
 import { changeCaret, changeColor } from '../utils/change';
 import { Stock } from '../types';
 
@@ -62,7 +63,7 @@ function applyFilters(stocks: Stock[], f: Filters): Stock[] {
       if (f.marketCap === 'micro'  && cap >= 300e6) return false;
     }
     // Fundamentals (dividend/P-E/beta) aren't available for every stock —
-    // e.g. live-fetched stocks from Finnhub's free tier don't carry them.
+    // e.g. stocks with live robot prices don't carry them.
     // Rather than defaulting an unknown value to 0 or 1 (which would
     // silently misclassify the stock), a stock with no data for a filter
     // just doesn't match that filter, same as if it failed the criterion.
@@ -129,7 +130,7 @@ export function StockBrowserScreen({ onStockPress, onBack }: StockBrowserScreenP
   const [showFilters, setShowFilters] = useState(false);
 
   // Derived from the stocks actually loaded, not the static database. The two
-  // used to disagree — live rows carried Finnhub's industry taxonomy while the
+  // used to disagree — live rows once carried Finnhub's industry taxonomy while the
   // static file uses GICS sector names, so chips like "Consumer Discretionary"
   // could never match a row and always filtered to nothing. Dropping the
   // profile2 call removed that second taxonomy, so both are GICS now; this
@@ -140,21 +141,12 @@ export function StockBrowserScreen({ onStockPress, onBack }: StockBrowserScreenP
   );
 
   /**
-   * Cap on how long the list will sit in its loading state. The fetch is
-   * rate-limited (see the token bucket in finnhubAdapter), so a cold cache
-   * legitimately takes tens of seconds; this only has to be longer than a
-   * healthy slow load, not longer than any load.
-   *
-   * Timing out does NOT abort the in-flight requests — they finish and
-   * populate the adapter cache, so the Retry this surfaces is usually
-   * instant rather than a second full round trip.
+   * Cap on how long the list will sit in its loading state. The list itself
+   * is local; the only wait is at most one price-robot request, which gives
+   * up after 5 seconds and leaves the saved or snapshot prices in place. So
+   * this only trips if something is badly wrong.
    */
-  // Must exceed a healthy cold-cache load. 44 symbols through the token
-  // bucket (10 burst, then 45/min) is ~43s, so this sits well clear of it.
-  // Boot prefetches into the same cache, so in practice this screen is
-  // usually warm and returns immediately; the slow path is a cold open
-  // straight to Browse. Lazy-loading visible rows would cut it properly.
-  const LOAD_TIMEOUT_MS = 75_000;
+  const LOAD_TIMEOUT_MS = 10_000;
 
   const load = useCallback(() => {
     let settled = false;
@@ -241,8 +233,9 @@ export function StockBrowserScreen({ onStockPress, onBack }: StockBrowserScreenP
             </Text>
           </TouchableOpacity>
         </View>
+        <PriceCredit style={{ marginTop: 4 }} />
       </View>
-      
+
       {/* Search */}
       <View style={styles.searchSection}>
         <View style={[

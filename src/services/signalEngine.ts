@@ -23,7 +23,7 @@ import {
   getAllTier1Stocks, getStocksBySector, getAllSectors, getStock,
   areFundamentalsStale, formatAsOfDate,
 } from './stockDataService';
-import { getEarningsSurprises } from './finnhubAdapter';
+import { getEarningsSurprises } from './earningsData';
 
 // ============================================================================
 // SIGNAL GENERATORS
@@ -34,7 +34,7 @@ import { getEarningsSurprises } from './finnhubAdapter';
  * fundamental, or '' when the figures are current enough to state plainly.
  *
  * Every Stock from getStock() carries snapshot-dated fundamentals today
- * (initializeLivePrices refreshes price only), so this is non-empty in
+ * (the price robot refreshes price only), so this is non-empty in
  * practice. It empties itself once fundamentals are fetched for real.
  */
 function asOfSuffix(stock: Stock): string {
@@ -95,8 +95,9 @@ function generateBlueChipSignals(stocks: Stock[]): Signal[] {
 }
 
 /**
- * Earnings surprise signal for ONE symbol, from Finnhub's real reported
- * actual-vs-estimate EPS (see getEarningsSurprises).
+ * Earnings surprise signal for ONE symbol, from real reported
+ * actual-vs-estimate EPS (see getEarningsSurprises; currently turned off, so
+ * this returns null until earnings are served through the price robot).
  *
  * This replaces a generator that picked the day's three biggest tech/
  * healthcare gainers — a price move, not an earnings event — and then

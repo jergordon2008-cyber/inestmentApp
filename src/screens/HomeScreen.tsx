@@ -22,6 +22,7 @@ import { useTradeJournalStore } from '../services/tradeJournalStore';
 import { duePredictions } from '../services/predictionGrading';
 import { useStreakStore, selectMicroLessonReadToday, getTodaysMicroLesson } from '../services/streakStore';
 import { localDay } from '../services/dailyStreak';
+import { PriceCredit } from '../components/PriceCredit';
 
 const ALL_LESSONS = [...tier1Lessons, ...tier2Lessons, ...tier3Lessons];
 
@@ -255,6 +256,7 @@ export function HomeScreen({
                       <Text style={[s.chipSub, { color: theme.colors.textTertiary }]}>cash</Text>
                     </View>
                   </View>
+                  <PriceCredit style={{ marginTop: 8 }} />
                 </>
               ) : (
                 // portfolio hasn't loaded (or been created) yet — a placeholder

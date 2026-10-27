@@ -23,6 +23,7 @@ import {
   listClassroomsForUser, listLeaderboard,
 } from './firestoreSync';
 import { requestSave, useSyncStatusStore } from './syncStatus';
+import { publicDisplayName } from '../utils/publicName';
 
 export type UserRole = 'student' | 'teacher';
 
@@ -30,7 +31,9 @@ export interface ClassMember {
   id: string;
   name: string;
   role: UserRole;
-  email: string;
+  /** No longer written: every member can read the roster. Docs saved before
+   *  the privacy change may still carry it. */
+  email?: string;
   joinedAt: string;
   portfolioValue?: number;
   portfolioReturn?: number;
@@ -133,8 +136,8 @@ interface ClassroomState {
 
   setRole: (role: UserRole) => void;
   setActiveClassroom: (id: string) => void;
-  createClassroom: (data: Partial<Classroom>, creator: { uid: string; name: string; email: string }) => Promise<Classroom>;
-  joinClassroom: (code: string, joiner: { uid: string; name: string; email: string }) => Promise<Classroom | null>;
+  createClassroom: (data: Partial<Classroom>, creator: { uid: string; name: string }) => Promise<Classroom>;
+  joinClassroom: (code: string, joiner: { uid: string; name: string }) => Promise<Classroom | null>;
   loadMyClassrooms: (uid: string) => Promise<void>;
   refreshMembers: (classId: string) => Promise<void>;
   addAssignment: (classId: string, a: Omit<Assignment, 'id' | 'completedBy'>) => Promise<void>;
@@ -179,6 +182,27 @@ function selection(c: Classroom | undefined, uid: string) {
   return { activeClassroomId: c?.id ?? null, isTeacher: teaches, myRole: (teaches ? 'teacher' : 'student') as UserRole };
 }
 
+function isMember(c: Classroom, uid: string): boolean {
+  return (c.memberIds ?? []).includes(uid) || (c.teacherIds ?? []).includes(uid);
+}
+
+/**
+ * The open class and whether `uid` teaches it, worked out from the class
+ * itself. Screens use this rather than the stored activeClassroomId /
+ * isTeacher: this store is saved on the device and isn't cleared on sign-out,
+ * so on a shared computer those would still be the previous account's (a
+ * teacher's class, with teacher controls) until loadMyClassrooms finishes,
+ * or for good if it fails.
+ */
+export function classroomViewFor(
+  s: Pick<ClassroomState, 'classrooms' | 'activeClassroomId'>,
+  uid: string | null | undefined,
+): { classroom: Classroom | undefined; isTeacher: boolean } {
+  const c = s.classrooms.find(x => x.id === s.activeClassroomId);
+  if (!c || !uid || !isMember(c, uid)) return { classroom: undefined, isTeacher: false };
+  return { classroom: c, isTeacher: (c.teacherIds ?? []).includes(uid) };
+}
+
 export const useClassroomStore = create<ClassroomState>()(
   persist(
     (set, get) => ({
@@ -202,7 +226,8 @@ export const useClassroomStore = create<ClassroomState>()(
           createdAt: now,
           subject: data.subject ?? '',
           gradeLevel: data.gradeLevel ?? '',
-          members: [{ id: creator.uid, name: creator.name, role: 'teacher', email: creator.email, joinedAt: now }],
+          // Every member can read the roster: first name + last initial, no email.
+          members: [{ id: creator.uid, name: publicDisplayName(creator.name), role: 'teacher', joinedAt: now }],
           assignments: [],
           announcements: [],
         };
@@ -226,7 +251,9 @@ export const useClassroomStore = create<ClassroomState>()(
         const normalized = code.trim().toUpperCase();
         if (!CLASS_CODE_RE.test(normalized)) return null;
 
-        const local = get().classrooms.find(c => c.code === normalized);
+        // A class already on this device counts only if this account is in
+        // it; another account's copy (shared computer) must still be joined.
+        const local = get().classrooms.find(c => c.code === normalized && isMember(c, joiner.uid));
         if (local) { set(selection(local, joiner.uid)); return local; }
 
         const classId = await lookupClassroomIdByCode(normalized);
@@ -238,7 +265,8 @@ export const useClassroomStore = create<ClassroomState>()(
         // genuine denial (surfaces as "Code not found").
         try {
           await addClassroomMember(classId, {
-            id: joiner.uid, name: joiner.name, role: 'student', email: joiner.email, joinedAt: new Date().toISOString(),
+            // Every member can read the roster: first name + last initial, no email.
+            id: joiner.uid, name: publicDisplayName(joiner.name), role: 'student', joinedAt: new Date().toISOString(),
           });
         } catch (e) {
           if (!isPermissionDenied(e)) throw e;

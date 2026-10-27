@@ -19,6 +19,7 @@ import { useUserStore } from '../services/userStore';
 import { useTradeJournalStore, Prediction, isPredictionFor, checkBackDate } from '../services/tradeJournalStore';
 import { useSkillTreeStore, SKILL_NODES } from '../services/skillTreeStore';
 import { logActivity } from '../services/firestoreSync';
+import { publicDisplayName } from '../utils/publicName';
 import { getChallengeForLesson } from '../data/lessonChallenges';
 import { MoodGuardrailModal } from '../screens/MoodGuardrailModal';
 import type { Mood } from '../services/moodStore';
@@ -202,7 +203,8 @@ export function AppFlowProvider({ uid, children }: { uid: string | null; childre
     if (trade && uid && user) {
       logActivity({
         uid,
-        displayName: user.displayName,
+        // Other students can read the feed: first name + last initial only.
+        displayName: publicDisplayName(user.displayName),
         action: trade.type,
         symbol: trade.symbol,
         createdAt: new Date().toISOString(),

@@ -9,6 +9,7 @@ import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { useUserStore } from '../services/userStore';
 import { createForumPost, listForumPosts, ForumPost } from '../services/firestoreSync';
+import { publicDisplayName } from '../utils/publicName';
 
 interface Props {
   onBack: () => void;
@@ -77,7 +78,8 @@ export function CommunityScreen({ onBack }: Props) {
     try {
       await createForumPost({
         authorUid: user.id,
-        authorName: user.displayName || 'Investor',
+        // Every signed-in student can read the forum: first name + last initial.
+        authorName: publicDisplayName(user.displayName),
         title: newTitle.trim(),
         body: newBody.trim(),
       });
@@ -153,9 +155,9 @@ export function CommunityScreen({ onBack }: Props) {
             return (
               <Card key={post.id} style={styles.postCard}>
                 <View style={styles.postHeader}>
-                  <InitialAvatar name={post.authorName} color={theme.colors.primary} />
+                  <InitialAvatar name={publicDisplayName(post.authorName)} color={theme.colors.primary} />
                   <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={[styles.postAuthor, { color: theme.colors.textPrimary }]}>{post.authorName}</Text>
+                    <Text style={[styles.postAuthor, { color: theme.colors.textPrimary }]}>{publicDisplayName(post.authorName)}</Text>
                     <Text style={[styles.postTime, { color: theme.colors.textTertiary }]}>{timeAgo(post.createdAt)}</Text>
                   </View>
                 </View>

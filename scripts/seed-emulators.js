@@ -14,6 +14,8 @@
  * and accounts that already exist are left as they are.
  */
 
+const { publicDisplayName } = require('./public-name');
+
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'demo-investiq';
 const AUTH_HOST = process.env.FIREBASE_AUTH_EMULATOR_HOST || '127.0.0.1:9099';
 const FIRESTORE_HOST = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
@@ -116,7 +118,8 @@ async function main() {
 
   await setDoc(`admins/${ADMIN.uid}`, { createdAt: now });
 
-  const member = (a, role) => ({ id: a.uid, name: a.name, role, email: a.email, joinedAt: now });
+  // Same shape as the app writes: first name + last initial, no email.
+  const member = (a, role) => ({ id: a.uid, name: publicDisplayName(a.name), role, joinedAt: now });
   await setDoc(`classrooms/${CLASSROOM.id}`, {
     id: CLASSROOM.id,
     name: CLASSROOM.name,

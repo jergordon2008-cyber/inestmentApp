@@ -23,6 +23,7 @@ import {
   listClassroomsForUser, listLeaderboard,
 } from './firestoreSync';
 import { requestSave, useSyncStatusStore } from './syncStatus';
+import { publicDisplayName } from '../utils/publicName';
 
 export type UserRole = 'student' | 'teacher';
 
@@ -30,7 +31,9 @@ export interface ClassMember {
   id: string;
   name: string;
   role: UserRole;
-  email: string;
+  /** No longer written: every member can read the roster. Docs saved before
+   *  the privacy change may still carry it. */
+  email?: string;
   joinedAt: string;
   portfolioValue?: number;
   portfolioReturn?: number;
@@ -133,8 +136,8 @@ interface ClassroomState {
 
   setRole: (role: UserRole) => void;
   setActiveClassroom: (id: string) => void;
-  createClassroom: (data: Partial<Classroom>, creator: { uid: string; name: string; email: string }) => Promise<Classroom>;
-  joinClassroom: (code: string, joiner: { uid: string; name: string; email: string }) => Promise<Classroom | null>;
+  createClassroom: (data: Partial<Classroom>, creator: { uid: string; name: string }) => Promise<Classroom>;
+  joinClassroom: (code: string, joiner: { uid: string; name: string }) => Promise<Classroom | null>;
   loadMyClassrooms: (uid: string) => Promise<void>;
   refreshMembers: (classId: string) => Promise<void>;
   addAssignment: (classId: string, a: Omit<Assignment, 'id' | 'completedBy'>) => Promise<void>;
@@ -223,7 +226,8 @@ export const useClassroomStore = create<ClassroomState>()(
           createdAt: now,
           subject: data.subject ?? '',
           gradeLevel: data.gradeLevel ?? '',
-          members: [{ id: creator.uid, name: creator.name, role: 'teacher', email: creator.email, joinedAt: now }],
+          // Every member can read the roster: first name + last initial, no email.
+          members: [{ id: creator.uid, name: publicDisplayName(creator.name), role: 'teacher', joinedAt: now }],
           assignments: [],
           announcements: [],
         };
@@ -261,7 +265,8 @@ export const useClassroomStore = create<ClassroomState>()(
         // genuine denial (surfaces as "Code not found").
         try {
           await addClassroomMember(classId, {
-            id: joiner.uid, name: joiner.name, role: 'student', email: joiner.email, joinedAt: new Date().toISOString(),
+            // Every member can read the roster: first name + last initial, no email.
+            id: joiner.uid, name: publicDisplayName(joiner.name), role: 'student', joinedAt: new Date().toISOString(),
           });
         } catch (e) {
           if (!isPermissionDenied(e)) throw e;

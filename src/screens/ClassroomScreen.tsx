@@ -11,6 +11,7 @@ import { useSyncStatusStore } from '../services/syncStatus';
 import { SyncBanner } from '../components/SyncBanner';
 import { useUserStore } from '../services/userStore';
 import { classReviewsOpen, ON_TIME_DAYS } from '../services/predictionGrading';
+import { publicDisplayName } from '../utils/publicName';
 
 interface Props {
   onBack: () => void;
@@ -106,7 +107,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
               setJoining(true);
               setJoinError(null);
               try {
-                const result = await joinClassroom(joinCode, { uid: user.id, name: user.displayName, email: user.email });
+                const result = await joinClassroom(joinCode, { uid: user.id, name: user.displayName });
                 if (result) setSetupPhase(null);
                 else setJoinError("We couldn't find a class with that code. Check it with your teacher and try again.");
               } catch (e) {
@@ -149,7 +150,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
               if (!user) return;
               await createClassroom(
                 { name: createName, subject: createSubject, gradeLevel: createGrade },
-                { uid: user.id, name: user.displayName, email: user.email }
+                { uid: user.id, name: user.displayName }
               );
               setSetupPhase(null);
             }}
@@ -261,10 +262,12 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                         </Text>
                       )}
                       <View style={[s.avatar, { backgroundColor: theme.colors.primary + '20' }]}>
-                        <Text style={[s.avatarText, { color: theme.colors.primary }]}>{m.name.charAt(0).toUpperCase()}</Text>
+                        <Text style={[s.avatarText, { color: theme.colors.primary }]}>{publicDisplayName(m.name).charAt(0)}</Text>
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={[s.studentName, { color: theme.colors.textPrimary }]}>{m.name}</Text>
+                        {/* Shortened on display too: rosters written before names were
+                            shortened at join still hold full names. */}
+                        <Text style={[s.studentName, { color: theme.colors.textPrimary }]}>{publicDisplayName(m.name)}</Text>
                         {/* portfolioValue/portfolioReturn are only ever written together, by
                             refreshMembers() pulling this member's public_stats doc — a student
                             who joined but never triggered a public_stats sync has both undefined
@@ -312,7 +315,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                     addAssignment(classroom.id, {
                       title: aTitle, description: aDesc, type: 'lesson',
                       dueDate: new Date(Date.now() + 7*86400000).toISOString(),
-                      assignedAt: new Date().toISOString(), assignedBy: user?.displayName ?? 'Teacher',
+                      assignedAt: new Date().toISOString(), assignedBy: publicDisplayName(user?.displayName ?? 'Teacher'),
                       points: 10, status: 'active',
                     });
                     setATitle(''); setADesc('');
@@ -363,7 +366,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
                   style={[s.primaryBtn, { backgroundColor: theme.colors.primary, opacity: annTitle.length < 3 || annBody.length < 3 ? 0.5 : 1 }]}
                   disabled={annTitle.length < 3 || annBody.length < 3}
                   onPress={() => {
-                    postAnnouncement(classroom.id, { title: annTitle, body: annBody, postedBy: user?.displayName ?? 'Teacher', pinned: false });
+                    postAnnouncement(classroom.id, { title: annTitle, body: annBody, postedBy: publicDisplayName(user?.displayName ?? 'Teacher'), pinned: false });
                     setAnnTitle(''); setAnnBody('');
                     // No "live" alert: it fired before the write landed. The card
                     // shows "Saving…" until Firestore acknowledges it.
@@ -379,7 +382,7 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
               <View key={ann.id} style={[s.annCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
                 <Text style={[s.annTitle, { color: theme.colors.textPrimary }]}>{ann.title}</Text>
                 <Text style={[s.annBody, { color: theme.colors.textSecondary }]}>{ann.body}</Text>
-                <Text style={[s.annMeta, { color: theme.colors.textTertiary }]}>{ann.postedBy} · {new Date(ann.postedAt).toLocaleDateString()}</Text>
+                <Text style={[s.annMeta, { color: theme.colors.textTertiary }]}>{publicDisplayName(ann.postedBy)} · {new Date(ann.postedAt).toLocaleDateString()}</Text>
                 {pendingNote(ann.id)}
               </View>
             ))}

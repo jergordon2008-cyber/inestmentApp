@@ -28,6 +28,7 @@ import { predictionActivity } from './src/services/predictionGrading';
 import { streakFieldsOf, currentStreak, localDay, reconcileStreak, legacyStreakCandidate, StreakFields } from './src/services/dailyStreak';
 import { useStreakStore } from './src/services/streakStore';
 import { useClassroomStore } from './src/services/classroomStore';
+import { publicDisplayName } from './src/utils/publicName';
 import { reconcileLessons, recoverProfile, stashUnsavedProfile, readUnsavedProfile, clearUnsavedProfile } from './src/services/profileReconcile';
 import type { User } from './src/types';
 import type { Portfolio } from './src/types';
@@ -96,9 +97,10 @@ function writePublicStats(forUid: string): Promise<void> {
   const activity = journal.ownerUid === forUid ? predictionActivity(journal.entries) : {};
   return savePublicStats(forUid, {
     ...activity,
-    // firestore.rules accepts 1–60 characters here; neither the sign-up
-    // field nor the email-prefix fallback caps the name.
-    displayName: user.displayName.trim().slice(0, 60) || 'Investor',
+    // Other students read this doc (leaderboard, class board): first name +
+    // last initial only ("Jeremiah G."). The full name stays in the private
+    // profile. Rewrites an older doc's full name on the next save.
+    displayName: publicDisplayName(user.displayName),
     // No portfolio, no number: null, not a made-up $100,000 / 0%. Null, not
     // omitted: the save merges (an omitted field would keep an old number),
     // and the leaderboard query orders by totalReturnPercent, which drops

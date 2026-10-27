@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { changeColor, changeSign } from '../utils/change';
-import { useClassroomStore, Classroom, Assignment, ClassMember, usePendingClassroomIds } from '../services/classroomStore';
+import { classroomViewFor, useClassroomStore, Classroom, Assignment, ClassMember, usePendingClassroomIds } from '../services/classroomStore';
 import { useSyncStatusStore } from '../services/syncStatus';
 import { SyncBanner } from '../components/SyncBanner';
 import { useUserStore } from '../services/userStore';
@@ -23,7 +23,7 @@ type Tab = 'overview' | 'students' | 'assignments' | 'feed';
 export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentPress }: Props) {
   const { theme } = useTheme();
   const s = styles(theme);
-  const { classrooms, activeClassroomId, myRole, isTeacher,
+  const { classrooms, activeClassroomId,
     createClassroom, joinClassroom, loadMyClassrooms, refreshMembers,
     addAssignment, completeAssignment, postAnnouncement,
     setRole, setActiveClassroom } = useClassroomStore();
@@ -50,12 +50,14 @@ export function ClassroomScreen({ onBack, onLessonPress, onBehavioralAssessmentP
 
   useEffect(() => { if (user) loadMyClassrooms(user.id); }, [user?.id]);
 
-  const classroom = classrooms.find(c => c.id === activeClassroomId);
+  // Only a class this account belongs to, and teacher controls only for its
+  // teachers, whatever another account left in this device's storage.
+  const { classroom, isTeacher } = classroomViewFor({ classrooms, activeClassroomId }, user?.id);
 
   useEffect(() => { if (classroom) refreshMembers(classroom.id); }, [classroom?.id]);
 
   // ── No classroom yet ──────────────────────────────────────────────────────
-  if (!classroom || !activeClassroomId) {
+  if (!classroom) {
     if (!setupPhase) return (
       <SafeAreaView style={s.container}>
         <View style={s.header}>

@@ -30,6 +30,7 @@ import { useUserStore } from '../services/userStore';
 import { fetchBrowsableStocks } from '../services/marketDataFacade';
 import { PriceCredit } from '../components/PriceCredit';
 import { changeCaret, changeColor } from '../utils/change';
+import { rankStockSearch } from '../utils/stockSearch';
 import { Stock } from '../types';
 
 const BLUE_CHIP_SYMBOLS = new Set([
@@ -177,17 +178,13 @@ export function StockBrowserScreen({ onStockPress, onBack }: StockBrowserScreenP
   useEffect(() => { load(); }, [load]);
 
   const stocks = useMemo(() => {
-    let results = query
-      ? allStocks.filter(s =>
-          s.symbol.toLowerCase().includes(query.toLowerCase()) ||
-          s.name.toLowerCase().includes(query.toLowerCase())
-        )
-      : allStocks;
+    let results = query ? rankStockSearch(allStocks, query) : allStocks;
     if (selectedSector && selectedSector !== 'All') {
       results = results.filter(s => s.sector === selectedSector);
     }
     results = applyFilters(results, filters);
-    return results.sort((a, b) => b.marketCap - a.marketCap);
+    // A search keeps its relevance order (symbol matches first); browsing is by size.
+    return query ? results : [...results].sort((a, b) => b.marketCap - a.marketCap);
   }, [query, selectedSector, allStocks, filters]);
 
   // Picking a sector swaps the rows under a scroll offset that belonged to the

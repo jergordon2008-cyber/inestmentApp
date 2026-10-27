@@ -16,7 +16,7 @@ import { tier2Lessons } from '../data/tier2curriculum';
 import { tier3Lessons } from '../data/tier3curriculum';
 import { getStockSync } from '../services/marketDataFacade';
 import { fs, sp, isTablet } from '../constants/responsive';
-import { changeCaret, changeColor, changeSign } from '../utils/change';
+import { changeCaret, changeColor, changeSign, formatMoneyChange, formatPercentChange } from '../utils/change';
 import { SyncBanner } from '../components/SyncBanner';
 import { useTradeJournalStore } from '../services/tradeJournalStore';
 import { duePredictions } from '../services/predictionGrading';
@@ -242,10 +242,10 @@ export function HomeScreen({
                     <View style={[s.chip, { backgroundColor: perf + '18' }]}>
                       {returnCaret && <Ionicons name={returnCaret} size={fs(11)} color={perf} />}
                       <Text style={[s.chipText, { color: perf }]}>
-                        {changeSign(totalReturn)}${Math.abs(totalReturn).toFixed(2)}
+                        {formatMoneyChange(totalReturn)}
                       </Text>
                       <Text style={[s.chipSub, { color: perf + 'BB' }]}>
-                        ({changeSign(totalReturnPct)}{totalReturnPct.toFixed(2)}%)
+                        ({formatPercentChange(totalReturnPct, totalReturn)})
                       </Text>
                     </View>
                     <View style={[s.chip, { backgroundColor: theme.colors.surfaceMuted }]}>

@@ -10,7 +10,7 @@ import { useSubscriptionStore } from './src/services/subscriptionStore';
 import { fetchStocks, buildPositionPriceMap } from './src/services/marketDataFacade';
 import { OnboardingAnswers } from './src/data/onboarding';
 
-import { subscribeToAuthChanges, signOutUser } from './src/services/authService';
+import { subscribeToAuthChanges, signOutUser, getCurrentAuthName } from './src/services/authService';
 import {
   saveUserProfile, loadUserProfile, savePortfolio, loadPortfolio,
   saveJournal, loadJournal, savePublicStats, isAdmin as checkIsAdmin,
@@ -560,7 +560,10 @@ function AppContent() {
     // authName comes from the required Name field on the signup screen — the
     // email-prefix fallback only fires if something upstream truly failed to
     // capture it, which the signup form's own validation should prevent.
-    const displayName = authName.trim() || authEmail.split('@')[0] || 'Investor';
+    // authName is React state and is lost on a refresh between sign-up and
+    // here; the same name is kept on the Auth account (authService.signUp).
+    const givenName = authName.trim() || getCurrentAuthName();
+    const displayName = givenName || authEmail.split('@')[0] || 'Investor';
     const newUser = createNewUser({
       id: uid,
       email: authEmail,
@@ -569,7 +572,7 @@ function AppContent() {
       experienceLevel: answers.experience,
       primaryGoal: answers.goal,
     });
-    newUser.hasCustomDisplayName = !!authName.trim();
+    newUser.hasCustomDisplayName = !!givenName;
     setUser(newUser);
     setOnboarded(true);
     initializePortfolio(newUser.id);

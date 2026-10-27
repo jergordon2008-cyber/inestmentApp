@@ -13,7 +13,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { signUp, signIn } from '../services/authService';
-import { showAlert } from '../utils/alert';
 import { sp, fs } from '../constants/responsive';
 
 interface Props {
@@ -29,31 +28,35 @@ export function AuthScreen({ mode, onAuthed, onBack, onSwitchMode }: Props) {
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading]   = useState(false);
+  // Shown under the form. On web, showAlert is a browser pop-up, which is easy
+  // to miss or have blocked — a taken email left the screen looking unresponsive.
+  const [error, setError]       = useState<string | null>(null);
 
   const isSignup = mode === 'signup';
 
   const handleSubmit = async () => {
+    setError(null);
     const trimmedName = name.trim();
     if (isSignup && trimmedName.length < 2) {
-      showAlert('Enter your name', 'This is what other students will see on the leaderboard.');
+      setError('Enter your name. This is what other students will see on the leaderboard.');
       return;
     }
     const trimmedEmail = email.trim();
     if (!trimmedEmail || !trimmedEmail.includes('@')) {
-      showAlert('Enter a valid email', 'We need a real email so your progress is saved to your account.');
+      setError('Enter a valid email. We need a real email so your progress is saved to your account.');
       return;
     }
     if (password.length < 6) {
-      showAlert('Password too short', 'Use at least 6 characters.');
+      setError('Password too short. Use at least 6 characters.');
       return;
     }
 
     setLoading(true);
-    const result = isSignup ? await signUp(trimmedEmail, password) : await signIn(trimmedEmail, password);
+    const result = isSignup ? await signUp(trimmedEmail, password, trimmedName) : await signIn(trimmedEmail, password);
     setLoading(false);
 
     if (!result.success || !result.uid) {
-      showAlert(isSignup ? 'Could not create account' : 'Could not sign in', result.error ?? 'Please try again.');
+      setError(result.error ?? 'Please try again.');
       return;
     }
 
@@ -83,7 +86,7 @@ export function AuthScreen({ mode, onAuthed, onBack, onSwitchMode }: Props) {
               <Text style={[s.label, { color: theme.colors.textTertiary }]}>NAME</Text>
               <TextInput
                 value={name}
-                onChangeText={setName}
+                onChangeText={t => { setName(t); setError(null); }}
                 placeholder="Your name"
                 placeholderTextColor={theme.colors.textTertiary}
                 autoCapitalize="words"
@@ -97,7 +100,7 @@ export function AuthScreen({ mode, onAuthed, onBack, onSwitchMode }: Props) {
             <Text style={[s.label, { color: theme.colors.textTertiary }]}>EMAIL</Text>
             <TextInput
               value={email}
-              onChangeText={setEmail}
+              onChangeText={t => { setEmail(t); setError(null); }}
               placeholder="you@example.com"
               placeholderTextColor={theme.colors.textTertiary}
               autoCapitalize="none"
@@ -112,7 +115,7 @@ export function AuthScreen({ mode, onAuthed, onBack, onSwitchMode }: Props) {
             <Text style={[s.label, { color: theme.colors.textTertiary }]}>PASSWORD</Text>
             <TextInput
               value={password}
-              onChangeText={setPassword}
+              onChangeText={t => { setPassword(t); setError(null); }}
               placeholder="At least 6 characters"
               placeholderTextColor={theme.colors.textTertiary}
               secureTextEntry
@@ -120,6 +123,10 @@ export function AuthScreen({ mode, onAuthed, onBack, onSwitchMode }: Props) {
               style={[s.input, { color: theme.colors.textPrimary, backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
             />
           </View>
+
+          {error ? (
+            <Text accessibilityLiveRegion="polite" style={[s.error, { color: theme.colors.danger }]}>{error}</Text>
+          ) : null}
 
           <TouchableOpacity
             onPress={handleSubmit}
@@ -159,6 +166,7 @@ const s = StyleSheet.create({
     height: sp(50), borderRadius: sp(14), borderWidth: 1,
     paddingHorizontal: sp(16), fontSize: fs(15),
   },
+  error:     { fontSize: fs(13), lineHeight: fs(18) },
   submitBtn: {
     height: sp(52), borderRadius: sp(16), alignItems: 'center', justifyContent: 'center',
     marginTop: sp(8),

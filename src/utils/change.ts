@@ -38,3 +38,28 @@ export function changeCaret(value: number | null | undefined): 'caret-up' | 'car
   if (tone === 'down') return 'caret-down';
   return null;
 }
+
+/**
+ * Signed dollar change: "+$1.20", "-$0.19", "$0.00". The screens used
+ * changeSign + Math.abs, which supplies '+' for gains but drops the minus on a
+ * loss, so a $0.19 loss read like a $0.19 gain next to a "-0.00%".
+ */
+export function formatMoneyChange(value: number | null | undefined): string {
+  const v = value ?? 0;
+  const tone = changeTone(v);
+  return `${tone === 'up' ? '+' : tone === 'down' ? '-' : ''}$${Math.abs(v).toFixed(2)}`;
+}
+
+/**
+ * Signed percent change at 2dp, e.g. "+1.50%", "-0.40%". A nonzero change too
+ * small for 2dp reads "<0.01%" rather than "-0.00%"; pass the paired dollar
+ * change so a percent that is tiny only because the dollars are flat stays "0.00%".
+ */
+export function formatPercentChange(pct: number | null | undefined, dollars?: number | null): string {
+  const p = pct ?? 0;
+  if (changeTone(p) === 'flat') {
+    const moved = dollars != null ? changeTone(dollars) !== 'flat' : p !== 0;
+    return moved && p !== 0 ? '<0.01%' : '0.00%';
+  }
+  return `${changeSign(p)}${p.toFixed(2)}%`;
+}

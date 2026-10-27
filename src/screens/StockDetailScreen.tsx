@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { changeCaret, changeColor, changeSign, changeTone } from '../utils/change';
+import { changeCaret, changeColor, changeTone, formatMoneyChange, formatPercentChange } from '../utils/change';
 import { useTheme } from '../context/ThemeContext';
 import { usePortfolioStore } from '../services/portfolioStore';
 import { fetchStock, getDataSourceLabel, getStockSync } from '../services/marketDataFacade';
@@ -77,6 +77,7 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
   const retired = isRetiredSymbol(symbol);
   const lastMark = retired ? retiredSellPrice(symbol, position) : null;
   const shownPrice = lastMark ?? stock.price;
+  const hasMarketCap = stock.marketCap > 0;
 
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.colors.background }]}>
@@ -123,16 +124,17 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
               {!retired && <View style={[s.changePill, s.changePillRow, { backgroundColor: color + '18' }]}>
                 {changeCaretName && <Ionicons name={changeCaretName} size={11} color={color} />}
                 <Text style={[s.change, { color }]}>
-                  ${Math.abs(stock.change).toFixed(2)}  ({changeSign(stock.changePercent)}{stock.changePercent.toFixed(2)}%)
+                  {formatMoneyChange(stock.change)}  ({formatPercentChange(stock.changePercent, stock.change)})
                 </Text>
               </View>}
             </View>
-            <View style={{ alignItems: 'flex-end' }}>
+            {/* Funds carry marketCap 0 ("not applicable"), which printed $0.00T. */}
+            {hasMarketCap && <View style={{ alignItems: 'flex-end' }}>
               <Text style={[s.mcapLabel, { color: theme.colors.textTertiary }]}>Market Cap</Text>
               <Text style={[s.mcap, { color: theme.colors.textSecondary }]}>
                 ${(stock.marketCap / 1e12).toFixed(2)}T
               </Text>
-            </View>
+            </View>}
           </View>
 
           <PriceCredit label={retired ? retiredPriceLabel(symbol) : getDataSourceLabel(stock)} style={{ marginTop: -8 }} />
@@ -155,7 +157,7 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
             <Text style={[s.positionText, { flex: 1, color: theme.colors.primary }]}>
               You own {position.shares.toFixed(4)} shares · Avg ${position.averageCost.toFixed(2)} ·{' '}
               <Text style={{ color: changeColor(position.unrealizedGain, theme) }}>
-                {changeSign(position.unrealizedGain)}{position.unrealizedGain.toFixed(2)} ({position.unrealizedGainPercent.toFixed(2)}%)
+                {formatMoneyChange(position.unrealizedGain)} ({formatPercentChange(position.unrealizedGainPercent, position.unrealizedGain)})
               </Text>
             </Text>
           </View>
@@ -213,7 +215,7 @@ export function StockDetailScreen({ symbol, onBack, onTrade, onLessonPress }: Pr
             {/* Same rule as Overview: P/E, PEG, EPS, Dividend Yield and Beta
                 aren't in the free tier's payload, so they aren't rendered. */}
             {[
-              { label: 'Market Cap',     val: `$${(stock.marketCap / 1e9).toFixed(1)}B` },
+              ...(hasMarketCap ? [{ label: 'Market Cap', val: `$${(stock.marketCap / 1e9).toFixed(1)}B` }] : []),
               { label: 'Exchange',       val: stock.exchange ?? '—' },
               { label: 'Industry',       val: stock.industry ?? '—' },
             ].map((row, i, rows) => (

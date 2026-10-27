@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { allocationSplit } from '../allocation';
+import { allocationSplit, sliceShareLabel } from '../allocation';
 
 describe('allocationSplit', () => {
   it('one share in a $100,000 account is not "Invested 0%"', () => {
@@ -26,5 +26,21 @@ describe('allocationSplit', () => {
   it('a zero or broken total does not show NaN', () => {
     expect(allocationSplit(0, 0)).toEqual({ investedPct: 0, investedLabel: '0%', cashLabel: '100%' });
     expect(allocationSplit(10, Number.NaN).investedLabel).toBe('0%');
+  });
+});
+
+describe('sliceShareLabel', () => {
+  it('keeps one decimal', () => {
+    expect(sliceShareLabel(0.7)).toBe('0.7%');
+    expect(sliceShareLabel(42.04)).toBe('42.0%');
+  });
+
+  it('nonzero values that would round to 0.0% show <0.1%', () => {
+    expect(sliceShareLabel(0.04)).toBe('<0.1%');
+    expect(sliceShareLabel(0.05)).toBe('0.1%');
+  });
+
+  it('zero stays 0.0%', () => {
+    expect(sliceShareLabel(0)).toBe('0.0%');
   });
 });

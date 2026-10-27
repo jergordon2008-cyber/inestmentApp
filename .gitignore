@@ -15,3 +15,4 @@ dist/
 
 # Output of npm run privacy:checklist — real names and emails, never commit
 *checklist*.txt
+privacy-backup-*.json

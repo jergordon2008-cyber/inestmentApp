@@ -444,7 +444,10 @@ export function LessonScreen({ lesson, onBack, onLessonComplete }: Props) {
   const completeLesson = useUserStore(s => s.completeLesson);
   // A finished lesson is one of the day's qualifying actions (dailyStreak).
   const recordActivity = useUserStore(s => s.recordActivity);
-  const addXP = useSkillTreeStore(s => s.addXP);
+  const awardLessonXP = useSkillTreeStore(s => s.awardLessonXP);
+  const lessonsCompleted = useUserStore(s => s.user?.lessonsCompleted);
+  // Read before completeLesson() adds it, so XP is only paid the first time.
+  const wasCompleted = lessonsCompleted?.includes(lesson.id) ?? false;
   const s = styles(theme);
 
   // Build interleaved content blocks
@@ -509,6 +512,9 @@ export function LessonScreen({ lesson, onBack, onLessonComplete }: Props) {
   const [progress, setProgress] = useState(0);
   const [showFinalQuiz, setShowFinalQuiz] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
+  // What this completion actually paid: 0 on a replay. The celebration showed
+  // the lesson's full reward every time, even when the total didn't change.
+  const [xpAwarded, setXpAwarded] = useState(0);
 
   // Final quiz state
   const finalQuestion = questions[questions.length - 1] ?? questions[0];
@@ -567,7 +573,7 @@ export function LessonScreen({ lesson, onBack, onLessonComplete }: Props) {
         setQuizComplete(true);
         completeLesson(lesson.id);
         recordActivity();
-        addXP(lesson.xpReward ?? (lesson.difficulty * 80 + 60));
+        setXpAwarded(awardLessonXP(lesson.id, lesson.xpReward ?? (lesson.difficulty * 80 + 60), wasCompleted));
         markLessonComplete();
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setTimeout(() => setShowCelebration(true), 400);
@@ -698,7 +704,7 @@ export function LessonScreen({ lesson, onBack, onLessonComplete }: Props) {
                   setQuizComplete(true);
                   completeLesson(lesson.id);
                   recordActivity();
-                  addXP(lesson.xpReward ?? (lesson.difficulty * 80 + 60));
+                  setXpAwarded(awardLessonXP(lesson.id, lesson.xpReward ?? (lesson.difficulty * 80 + 60), wasCompleted));
                   markLessonComplete();
                   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                   setTimeout(() => setShowCelebration(true), 400);
@@ -754,7 +760,8 @@ export function LessonScreen({ lesson, onBack, onLessonComplete }: Props) {
       <LessonCompleteAnimation
         visible={showCelebration}
         lessonTitle={lesson.title}
-        xpEarned={lesson.xpReward ?? (lesson.difficulty * 80 + 60)}
+        xpEarned={xpAwarded}
+        alreadyEarned={xpAwarded === 0}
         onContinue={() => { setShowCelebration(false); onLessonComplete(lesson.id); }}
       />
     </SafeAreaView>
